@@ -1,0 +1,17 @@
+# Environments & Cache
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+
+# Logs & temp
+*.log
+scratch/
