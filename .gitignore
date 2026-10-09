@@ -1,17 +1,47 @@
-# Environments & Cache
+# Environments & Python VirtualEnvs
 .venv/
-venv/
-__pycache__/
+.venv*/
+**/venv/
+**/env/
+**/ENV/
+**/__pycache__/
 *.pyc
 *.pyo
+*.pyd
+.Python
+*.egg-info/
+.installed.cfg
+*.egg
+
+# OS & Editor Metadata
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.vscode/
+.idea/
 
-# Frontend
-frontend/node_modules/
-frontend/.next/
-frontend/out/
-frontend/build/
+# Frontend & Node Dependencies / Build Caches
+**/node_modules/
+node_modules/
+**/.next/
+.next/
+**/out/
+out/
+**/build/
+build/
+.next/cache/
+*.tsbuildinfo
+frontend/tsconfig.tsbuildinfo
 
-# Logs & temp
+# Logs & Temporary Files
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.pid
+*.pid.lock
 scratch/
