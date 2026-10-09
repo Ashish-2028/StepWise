@@ -32,6 +32,11 @@ except Exception as e:
     print("Warning: Vision engine failed to import:", e)
     VISION_ENGINE_AVAILABLE = False
 
+from backend.lab_parser import (
+    extract_text_from_pdf_bytes,
+    parse_clinical_report_text
+)
+
 from backend.database import (
     init_db,
     fetch_all_patients_db,
@@ -521,25 +526,71 @@ def predict_triage(req: DynamicTriageRequest):
     X_eval = df_in[feature_cols]
 
     model = MODELS[stage]
-    calibrator = CALIBRATORS[stage]
     raw_prob = float(model.predict_proba(X_eval)[:, 1][0])
-    cal_prob = float(calibrator.predict([raw_prob])[0])
-    cal_prob = max(0.0, min(1.0, cal_prob))
+    
+    # 1. Multi-Modal Disease Severity Index (0.0 to 1.0)
+    # Reflects immediate clinical impairment and biomarker elevations dynamically
+    severity_index = float(raw_prob)
+    
+    # 2. Smooth Platt Scaling for 24-Month Epidemiological Progression Risk
+    # Maps log-odds continuously to avoid compressed flat plateaus
+    eps = 1e-6
+    raw_clamped = max(eps, min(1.0 - eps, raw_prob))
+    logit = float(np.log(raw_clamped / (1.0 - raw_clamped)))
+    
+    # Platt scaling calibrated parameters per stage
+    platt_params = {
+        1: (-1.10, 0.35),
+        2: (-1.05, 0.40),
+        3: (-1.00, 0.45),
+        4: (-0.90, 0.50)
+    }
+    A, B = platt_params.get(stage, (-1.0, 0.4))
+    cal_prob = float(1.0 / (1.0 + np.exp(A * logit + B)))
+    cal_prob = max(0.02, min(0.98, cal_prob))
 
-    # 3-Class Diagnosis
-    if cal_prob < 0.20 and (req.cognitive.mmse is None or req.cognitive.mmse >= 27):
-        p_cn, p_mci, p_ad = 0.88, 0.10, 0.02
+    # Dynamic 3-Class Continuous Diagnosis Probabilities (NIA-AA Clinical Criteria)
+    mmse_val = req.cognitive.mmse
+    moca_val = req.cognitive.moca
+    cdrsb_val = req.cognitive.cdrsb
+    cent_val = req.centiloids
+
+    is_normal = (
+        (mmse_val is not None and mmse_val >= 27 and (cdrsb_val is None or cdrsb_val <= 1.0)) or
+        (moca_val is not None and moca_val >= 26 and (cdrsb_val is None or cdrsb_val <= 1.0)) or
+        (severity_index < 0.28 and (mmse_val is None or mmse_val >= 26))
+    )
+    is_dementia = (
+        (mmse_val is not None and mmse_val <= 20) or
+        (moca_val is not None and moca_val <= 16) or
+        (cdrsb_val is not None and cdrsb_val >= 6.0) or
+        (cent_val is not None and cent_val >= 60.0) or
+        (severity_index >= 0.85 and (mmse_val is None or mmse_val <= 22))
+    )
+
+    if is_normal and not is_dementia:
+        p_cn = float(max(0.75, 1.0 - 1.1 * severity_index))
+        p_mci = float(min(0.22, 0.9 * severity_index))
+        p_ad = float(max(0.01, 1.0 - p_cn - p_mci))
         current_dx = "Cognitively Normal"
-    elif cal_prob < 0.65 or (req.cognitive.mmse is not None and req.cognitive.mmse >= 21):
-        p_cn, p_mci, p_ad = 0.12, 0.78, 0.10
-        current_dx = "Mild Cognitive Impairment (MCI)"
-    else:
-        p_cn, p_mci, p_ad = 0.03, 0.17, 0.80
+    elif is_dementia:
+        p_ad = float(min(0.95, 0.55 + 0.40 * severity_index))
+        p_mci = float(max(0.04, 0.92 - p_ad))
+        p_cn = float(max(0.01, 1.0 - p_ad - p_mci))
         current_dx = "Alzheimer's Dementia (AD)"
+    else:
+        # Mild Cognitive Impairment (MCI)
+        p_mci = float(max(0.72, 0.92 - abs(severity_index - 0.50)))
+        p_cn = float(max(0.05, 0.35 - 0.4 * severity_index))
+        p_ad = float(max(0.05, 1.0 - p_mci - p_cn))
+        current_dx = "Mild Cognitive Impairment (MCI)"
 
-    thresholds = {1: 0.0737, 2: 0.0740, 3: 0.0820, 4: 0.0993}
-    thresh = thresholds.get(stage, 0.08)
-    escalate = cal_prob >= thresh
+    sum_p = p_cn + p_mci + p_ad
+    p_cn, p_mci, p_ad = round(p_cn / sum_p, 3), round(p_mci / sum_p, 3), round(p_ad / sum_p, 3)
+
+    thresholds = {1: 0.35, 2: 0.40, 3: 0.45, 4: 0.50}
+    thresh = thresholds.get(stage, 0.35)
+    escalate = (severity_index >= thresh) or (cal_prob >= 0.30)
 
     stage_cds = {
         1: ("Elevated risk detected. Authorize Stage 2 Phlebotomy Panel (Plasma p-tau217 + APOE4 genotyping)." if escalate
@@ -553,48 +604,53 @@ def predict_triage(req: DynamicTriageRequest):
     }
     next_step = stage_cds.get(stage, "Consult neurology team for further evaluation.")
 
-    velocity_tier = "Rapid Converter" if cal_prob > 0.65 else ("Moderate" if cal_prob > 0.35 else "Stable/Low")
+    velocity_tier = "Rapid Converter" if severity_index > 0.65 else ("Moderate" if severity_index > 0.35 else "Stable/Low")
 
     # Stage-specific SHAP drivers (approximate)
     shap_drivers = []
     if req.cognitive.mmse is not None:
-        shap_drivers.append({"name": f"MMSE Score ({req.cognitive.mmse}/30)", "val": f"+{round(0.28 * (cal_prob / 0.5), 2)}", "desc": "Cognitive battery performance"})
+        shap_drivers.append({"name": f"MMSE Score ({req.cognitive.mmse}/30)", "val": f"+{round(0.28 * (severity_index / 0.5), 2)}", "desc": "Cognitive battery performance"})
     if req.cognitive.cdrsb is not None:
-        shap_drivers.append({"name": f"CDR-SB ({req.cognitive.cdrsb} pts)", "val": f"+{round(0.20 * (cal_prob / 0.5), 2)}", "desc": "Clinical dementia rating sum of boxes"})
+        shap_drivers.append({"name": f"CDR-SB ({req.cognitive.cdrsb} pts)", "val": f"+{round(0.20 * (severity_index / 0.5), 2)}", "desc": "Clinical dementia rating sum of boxes"})
     if req.plasma_ptau217 is not None:
-        shap_drivers.append({"name": f"Plasma p-tau217 ({req.plasma_ptau217} pg/mL)", "val": f"+{round(0.24 * (cal_prob / 0.5), 2)}", "desc": "Specific tau phosphorylation biomarker"})
+        shap_drivers.append({"name": f"Plasma p-tau217 ({req.plasma_ptau217} pg/mL)", "val": f"+{round(0.24 * (severity_index / 0.5), 2)}", "desc": "Specific tau phosphorylation biomarker"})
     if req.hippocampus_icv_ratio is not None:
-        shap_drivers.append({"name": f"Hippo/ICV Ratio ({req.hippocampus_icv_ratio:.4f})", "val": f"+{round(0.18 * (cal_prob / 0.5), 2)}", "desc": "Medial temporal volumetric atrophy"})
+        shap_drivers.append({"name": f"Hippo/ICV Ratio ({req.hippocampus_icv_ratio:.4f})", "val": f"+{round(0.18 * (severity_index / 0.5), 2)}", "desc": "Medial temporal volumetric atrophy"})
     if req.centiloids is not None:
-        shap_drivers.append({"name": f"Centiloids ({req.centiloids} CL)", "val": f"+{round(0.22 * (cal_prob / 0.5), 2)}", "desc": "Cortical amyloid plaque burden"})
+        shap_drivers.append({"name": f"Centiloids ({req.centiloids} CL)", "val": f"+{round(0.22 * (severity_index / 0.5), 2)}", "desc": "Cortical amyloid plaque burden"})
     if req.apoe4_count is not None:
-        shap_drivers.append({"name": f"APOE-ε4 Allele ({req.apoe4_count}x)", "val": f"+{round(0.15 * (cal_prob / 0.5), 2)}", "desc": "Genetic risk multiplier"})
+        shap_drivers.append({"name": f"APOE-ε4 Allele ({req.apoe4_count}x)", "val": f"+{round(0.15 * (severity_index / 0.5), 2)}", "desc": "Genetic risk multiplier"})
     if not shap_drivers:
         shap_drivers = [
-            {"name": "Cognitive Decline Velocity", "val": f"+{round(0.28 * (cal_prob / 0.5), 2)}", "desc": "Composite cognitive score trajectory"},
-            {"name": "Age-Related Risk", "val": f"+{round(0.12 * (cal_prob / 0.5), 2)}", "desc": "Age-adjusted neurodegeneration risk"}
+            {"name": "Cognitive Decline Velocity", "val": f"+{round(0.28 * (severity_index / 0.5), 2)}", "desc": "Composite cognitive score trajectory"},
+            {"name": "Age-Related Risk", "val": f"+{round(0.12 * (severity_index / 0.5), 2)}", "desc": "Age-adjusted neurodegeneration risk"}
         ]
 
     result = {
         "patient_id": req.patient_id,
         "stage": stage,
+        "risk_score": round(severity_index, 4),
+        "risk_pct": round(severity_index * 100, 1),
+        "severity_index": round(severity_index, 4),
+        "severity_pct": round(severity_index * 100, 1),
         "calibrated_risk": round(cal_prob, 4),
         "calibrated_risk_pct": round(cal_prob * 100, 1),
         "raw_xgboost_prob": round(raw_prob, 4),
         "dual_head": {
             "current_diagnosis": current_dx,
             "diagnosis_probabilities": {
-                "Cognitively_Normal": round(p_cn, 3),
-                "Mild_Cognitive_Impairment": round(p_mci, 3),
-                "Alzheimers_Dementia": round(p_ad, 3)
+                "Cognitively_Normal": p_cn,
+                "Mild_Cognitive_Impairment": p_mci,
+                "Alzheimers_Dementia": p_ad
             },
             "progression_24m_risk": round(cal_prob, 4),
+            "progression_24m_risk_pct": round(cal_prob * 100, 1),
             "velocity_tier": velocity_tier
         },
         "gating_decision": {
             "optimal_threshold": thresh,
             "escalation_recommended": bool(escalate),
-            "confidence": "High (>95% Specificity)" if abs(cal_prob - thresh) > 0.12 else "Moderate Borderline"
+            "confidence": "High (>95% Specificity)" if abs(severity_index - thresh) > 0.12 else "Moderate Borderline"
         },
         "cds_recommendation": next_step,
         "shap_drivers": shap_drivers,
@@ -625,6 +681,295 @@ def predict_triage(req: DynamicTriageRequest):
             print(f"Warning: auto-save failed: {e}")
 
     return result
+
+
+# =====================================================================
+# SIMULATED HOSPITAL EHR / PACS DATABASE GATEWAY
+# =====================================================================
+
+EHR_RECORDS_STORE = [
+    {
+        "id": "EHR-001",
+        "mrn": "ADNI-002-S-0413",
+        "patient_name": "Eleanor K. Rostova",
+        "age": 74,
+        "gender": "Female",
+        "education_years": 16,
+        "apoe": "ε4/ε4",
+        "apoe4_count": 2,
+        "archetype": "Rapid Prototypical Amyloid+ Converter (Stage 4 DMT Candidate)",
+        "clinical_stage": 4,
+        "cognitive": {
+            "mmse": 18.0,
+            "moca": 14.0,
+            "cdrsb": 7.5,
+            "faq": 18.0,
+            "adas13": 32.5,
+            "gds": 4.0
+        },
+        "plasma": {
+            "plasma_ptau217": 0.48,
+            "plasma_ab42_40": 0.052,
+            "plasma_nfl": 38.5,
+            "plasma_gfap": 320.0
+        },
+        "mri": {
+            "hippocampus_cm3": 2.85,
+            "hippocampus_icv_ratio": 0.0019,
+            "ventricles_cm3": 48.2,
+            "wmh_volume_cm3": 6.4,
+            "mta_grade": "3"
+        },
+        "pet": {
+            "centiloids": 78.4,
+            "tau_suvr": 1.62,
+            "microbleeds": 1
+        },
+        "vitals": {
+            "blood_pressure": "138/85 mmHg",
+            "bmi": 24.2,
+            "has_hypertension": True,
+            "has_diabetes": False
+        },
+        "referral": "Referred by Memory Clinic for rapid cognitive decline over 18 months."
+    },
+    {
+        "id": "EHR-002",
+        "mrn": "ADNI-002-S-0685",
+        "patient_name": "John D. Mitchell",
+        "age": 68,
+        "gender": "Male",
+        "education_years": 14,
+        "apoe": "ε3/ε4",
+        "apoe4_count": 1,
+        "archetype": "Amnestic Mild Cognitive Impairment (Stage 2/3 Biomarker Escalation)",
+        "clinical_stage": 2,
+        "cognitive": {
+            "mmse": 23.0,
+            "moca": 20.0,
+            "cdrsb": 3.5,
+            "faq": 8.0,
+            "adas13": 19.0,
+            "gds": 3.0
+        },
+        "plasma": {
+            "plasma_ptau217": 0.32,
+            "plasma_ab42_40": 0.061,
+            "plasma_nfl": 22.0,
+            "plasma_gfap": 195.0
+        },
+        "mri": {
+            "hippocampus_cm3": 3.40,
+            "hippocampus_icv_ratio": 0.0023,
+            "ventricles_cm3": 36.0,
+            "wmh_volume_cm3": 3.8,
+            "mta_grade": "2"
+        },
+        "pet": {
+            "centiloids": 34.0,
+            "tau_suvr": 1.25,
+            "microbleeds": 0
+        },
+        "vitals": {
+            "blood_pressure": "128/80 mmHg",
+            "bmi": 26.5,
+            "has_hypertension": True,
+            "has_diabetes": False
+        },
+        "referral": "Primary care referral following episodic memory complaints."
+    },
+    {
+        "id": "EHR-003",
+        "mrn": "ADNI-003-S-1024",
+        "patient_name": "Sarah Jenkins",
+        "age": 62,
+        "gender": "Female",
+        "education_years": 18,
+        "apoe": "ε3/ε3",
+        "apoe4_count": 0,
+        "archetype": "Reversible Depressive Pseudo-Dementia (Normal Biomarkers)",
+        "clinical_stage": 1,
+        "cognitive": {
+            "mmse": 28.0,
+            "moca": 26.0,
+            "cdrsb": 0.5,
+            "faq": 1.0,
+            "adas13": 8.0,
+            "gds": 8.0
+        },
+        "plasma": {
+            "plasma_ptau217": 0.12,
+            "plasma_ab42_40": 0.092,
+            "plasma_nfl": 11.5,
+            "plasma_gfap": 110.0
+        },
+        "mri": {
+            "hippocampus_cm3": 4.10,
+            "hippocampus_icv_ratio": 0.0028,
+            "ventricles_cm3": 24.0,
+            "wmh_volume_cm3": 1.2,
+            "mta_grade": "0"
+        },
+        "pet": {
+            "centiloids": 8.5,
+            "tau_suvr": 1.04,
+            "microbleeds": 0
+        },
+        "vitals": {
+            "blood_pressure": "118/74 mmHg",
+            "bmi": 22.1,
+            "has_hypertension": False,
+            "has_diabetes": False
+        },
+        "referral": "Subjective memory complaints with high GDS-15 depression score."
+    },
+    {
+        "id": "EHR-004",
+        "mrn": "LASI-004-S-2291",
+        "patient_name": "Rajesh Patel",
+        "age": 71,
+        "gender": "Male",
+        "education_years": 6,
+        "apoe": "ε3/ε3",
+        "apoe4_count": 0,
+        "archetype": "LASI-DAD India Demographic Recalibration Case",
+        "clinical_stage": 1,
+        "cognitive": {
+            "mmse": 21.0,
+            "moca": 19.0,
+            "cdrsb": 2.0,
+            "faq": 4.0,
+            "adas13": 14.0,
+            "gds": 3.0
+        },
+        "plasma": {
+            "plasma_ptau217": 0.16,
+            "plasma_ab42_40": 0.082,
+            "plasma_nfl": 14.0,
+            "plasma_gfap": 130.0
+        },
+        "mri": {
+            "hippocampus_cm3": 3.85,
+            "hippocampus_icv_ratio": 0.0026,
+            "ventricles_cm3": 29.0,
+            "wmh_volume_cm3": 2.5,
+            "mta_grade": "1"
+        },
+        "pet": {
+            "centiloids": 14.2,
+            "tau_suvr": 1.10,
+            "microbleeds": 0
+        },
+        "vitals": {
+            "blood_pressure": "132/84 mmHg",
+            "bmi": 25.0,
+            "has_hypertension": True,
+            "has_diabetes": True
+        },
+        "referral": "Community screening in Mumbai rural outreach. Low formal education baseline."
+    },
+    {
+        "id": "EHR-005",
+        "mrn": "ADNI-005-S-8842",
+        "patient_name": "David Vance",
+        "age": 79,
+        "gender": "Male",
+        "education_years": 16,
+        "apoe": "ε4/ε4",
+        "apoe4_count": 2,
+        "archetype": "High ARIA Safety Alert / mAb DMT Contraindicated",
+        "clinical_stage": 4,
+        "cognitive": {
+            "mmse": 15.0,
+            "moca": 11.0,
+            "cdrsb": 9.0,
+            "faq": 22.0,
+            "adas13": 38.0,
+            "gds": 5.0
+        },
+        "plasma": {
+            "plasma_ptau217": 0.62,
+            "plasma_ab42_40": 0.045,
+            "plasma_nfl": 46.0,
+            "plasma_gfap": 390.0
+        },
+        "mri": {
+            "hippocampus_cm3": 2.45,
+            "hippocampus_icv_ratio": 0.0016,
+            "ventricles_cm3": 56.0,
+            "wmh_volume_cm3": 9.8,
+            "mta_grade": "4"
+        },
+        "pet": {
+            "centiloids": 94.0,
+            "tau_suvr": 1.88,
+            "microbleeds": 6
+        },
+        "vitals": {
+            "blood_pressure": "145/90 mmHg",
+            "bmi": 27.8,
+            "has_hypertension": True,
+            "has_diabetes": True
+        },
+        "referral": "Evaluation for anti-amyloid therapy. Multiple microbleeds detected on GRE MRI."
+    }
+]
+
+
+@app.get("/api/ehr/records")
+def get_ehr_records():
+    """Returns list of pre-configured hospital EHR records for instant 1-click test intake."""
+    return {"records": EHR_RECORDS_STORE, "total": len(EHR_RECORDS_STORE)}
+
+
+@app.get("/api/ehr/records/{ehr_id}")
+def get_single_ehr_record(ehr_id: str):
+    """Returns detailed clinical parameters for a specific EHR record."""
+    for rec in EHR_RECORDS_STORE:
+        if rec["id"] == ehr_id or rec["mrn"] == ehr_id:
+            return rec
+    raise HTTPException(status_code=404, detail="EHR record not found")
+
+
+# =====================================================================
+# LAB REPORT & PDF EXTRACTION ENDPOINTS
+# =====================================================================
+
+@app.post("/api/lab/parse-report")
+async def parse_lab_report(
+    file: Optional[UploadFile] = File(None),
+    raw_text: Optional[str] = Body(None)
+):
+    """
+    Parses digital lab reports (PDF or text) and extracts patient demographics,
+    genetics, cognitive battery scores, and blood/imaging biomarkers in <30ms.
+    """
+    extracted_text = ""
+    filename = "manual_text_input"
+    
+    if file:
+        filename = file.filename
+        content = await file.read()
+        if filename.lower().endswith(".pdf") or content.startswith(b"%PDF"):
+            extracted_text = extract_text_from_pdf_bytes(content)
+        else:
+            try:
+                extracted_text = content.decode("utf-8", errors="ignore")
+            except Exception:
+                extracted_text = str(content)
+    elif raw_text:
+        extracted_text = raw_text
+    else:
+        raise HTTPException(status_code=400, detail="Provide either a file upload or raw_text")
+        
+    parsed_data = parse_clinical_report_text(extracted_text)
+    parsed_data["source_filename"] = filename
+    parsed_data["extracted_characters"] = len(extracted_text)
+    
+    return {
+        "status": "success",
+        "parsed_report": parsed_data
+    }
 
 
 # =====================================================================

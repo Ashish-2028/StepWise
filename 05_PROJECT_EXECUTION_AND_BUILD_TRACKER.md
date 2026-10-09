@@ -162,23 +162,23 @@
 ---
 
 ### Phase 10: Dynamic Calibration (Platt Scaling), Dual-Metric Output, Automated EHR Record Sync & Multimodal Data Ingestion (Branch: `feat/calibrator-ehr-ingestion`)
-- [ ] **Task 10.1:** **Dynamic Model Calibration & Boundary Scaling**:
+- [x] **Task 10.1:** **Dynamic Model Calibration & Boundary Scaling**:
   - Replace compressed isotonic plateaus with continuous Platt scaling (logistic sigmoid mapping) across all 4 XGBoost stage models.
   - Enable continuous, highly sensitive 0–100% severity scores responding dynamically to any shift in cognitive scores (MMSE, MoCA) or plasma biomarkers (p-tau217, Aβ42/40).
-  - Update diagnostic label logic so clinical classifications (Normal, MCI, Mild AD, Moderate/Severe AD) align dynamically with severity indices.
-- [ ] **Task 10.2:** **Dual-Metric Clinical Display Architecture**:
+  - Update diagnostic label logic so clinical classifications (Normal, MCI, Mild AD, Moderate/Severe AD) align dynamically with severity indices. *(Done: Oct 09, 2026)*
+- [x] **Task 10.2:** **Dual-Metric Clinical Display Architecture**:
   - Primary Metric: Multimodal Disease Severity / Biological Impairment Index (0–100% dynamic).
   - Secondary Sub-Badge: 24-Month Epidemiological Progression Risk with 95% confidence intervals.
-  - Preserves existing Bento Grid layout without UI breakage.
-- [ ] **Task 10.3:** **Simulated Hospital EHR / PACS 1-Click Sync Service**:
-  - Backend `/api/ehr/records` endpoint providing pre-loaded, authentic longitudinal hospital cohorts.
-  - 1-Click "Pull from Hospital EHR" dropdown in New Assessment Modal to instantly populate all biomarker, cognitive, and demographic fields in 1ms.
-- [ ] **Task 10.4:** **Digital Lab Report PDF Ingestion Engine**:
-  - Backend `/api/lab/parse-pdf` lightweight text-stream parser (`pdfplumber`/`pypdf`) extracting clinical biomarker values (p-tau217, Aβ ratio, NfL, GFAP, MMSE) in <30ms with 100% character fidelity.
-  - Drag-and-drop PDF upload zone in the clinical modal with automatic form field binding.
-- [ ] **Task 10.5:** **Physician Voice Dictation & Deterministic Clinical Entity Extractor**:
+  - Preserves existing Bento Grid layout without UI breakage. *(Done: Oct 09, 2026)*
+- [x] **Task 10.3:** **Simulated Hospital EHR / PACS 1-Click Sync Service**:
+  - Backend `/api/ehr/records` endpoint providing pre-loaded, authentic longitudinal hospital cohorts (Eleanor Rostova, John Mitchell, Sarah Jenkins, Rajesh Patel, David Vance).
+  - 1-Click "Pull from Hospital EHR" dropdown in New Assessment Modal and Stage Workup Modal to instantly populate all biomarker, cognitive, and demographic fields in 1ms. *(Done: Oct 09, 2026)*
+- [x] **Task 10.4:** **Digital Lab Report PDF Ingestion Engine**:
+  - Backend `/api/lab/parse-report` lightweight text-stream parser extracting clinical biomarker values (p-tau217, Aβ ratio, NfL, GFAP, MMSE) in <30ms with 100% character fidelity.
+  - Drag-and-drop PDF upload zone in the clinical modal and new patient modal with automatic form field binding. *(Done: Oct 09, 2026)*
+- [x] **Task 10.5:** **Physician Voice Dictation & Deterministic Clinical Entity Extractor**:
   - Zero-latency browser Web Speech API transcription paired with deterministic clinical regex entity parsing.
-  - Automatic voice-to-field population with visual confirmation highlights.
+  - Automatic voice-to-field population with visual confirmation highlights. *(Done: Oct 09, 2026)*
 
 ---
 

@@ -9,7 +9,7 @@ import {
   Lock, ChevronRight, ChevronDown, ChevronUp, BarChart2, Globe,
   ClipboardList, Printer, Copy, Info, SlidersHorizontal, UploadCloud,
   ShieldAlert, Sparkles, Eye, ArrowLeft, CheckCheck, Clock, UserPlus,
-  TrendingDown, Layers, RefreshCw, Settings, MoreVertical
+  TrendingDown, Layers, RefreshCw, Settings, MoreVertical, Mic, MicOff, Database
 } from 'lucide-react'
 
 import ScanDualViewer from './components/ScanDualViewer'
@@ -2324,6 +2324,178 @@ function StageView({ patient, stageNum, onBack, apiBase, onRefresh }: { patient:
     setSaved(false)
   }, [stageNum, p.id, p.mrn, stageGroups])
 
+  const [ehrRecords, setEhrRecords] = useState<any[]>([])
+  const [isListening, setIsListening] = useState(false)
+  const [voiceNote, setVoiceNote] = useState('')
+  const [extractStatus, setExtractStatus] = useState<string | null>(null)
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null)
+
+  // Fetch EHR records on mount
+  useEffect(() => {
+    fetch(`${apiBase}/api/ehr/records`)
+      .then(res => res.json())
+      .then(data => { if (data?.records) setEhrRecords(data.records) })
+      .catch(() => {})
+  }, [apiBase])
+
+  const applyEhrRecord = (recordId: string) => {
+    const rec = ehrRecords.find(r => r.id === recordId || r.mrn === recordId)
+    if (!rec) return
+    setExtractStatus(`Imported: ${rec.patient_name} (${rec.archetype})`)
+    setTimeout(() => setExtractStatus(null), 4000)
+
+    if (stageNum === 1 && rec.cognitive) {
+      setFeats(prev => ({
+        ...prev,
+        mmse: { enabled: true, value: String(rec.cognitive.mmse ?? prev.mmse?.value ?? 24) },
+        moca: { enabled: true, value: String(rec.cognitive.moca ?? prev.moca?.value ?? 22) },
+        cdrsb: { enabled: true, value: String(rec.cognitive.cdrsb ?? prev.cdrsb?.value ?? 1.5) },
+        faq: { enabled: true, value: String(rec.cognitive.faq ?? prev.faq?.value ?? 4.0) },
+        adas13: { enabled: true, value: String(rec.cognitive.adas13 ?? prev.adas13?.value ?? 24.0) },
+        gds: { enabled: true, value: String(rec.cognitive.gds ?? prev.gds?.value ?? 2.0) },
+      }))
+    } else if (stageNum === 2 && rec.plasma) {
+      setFeats(prev => ({
+        ...prev,
+        plasma_ptau217: { enabled: true, value: String(rec.plasma.plasma_ptau217 ?? prev.plasma_ptau217?.value ?? 0.24) },
+        plasma_ab42_40: { enabled: true, value: String(rec.plasma.plasma_ab42_40 ?? prev.plasma_ab42_40?.value ?? 0.082) },
+        plasma_nfl: { enabled: true, value: String(rec.plasma.plasma_nfl ?? prev.plasma_nfl?.value ?? 15.4) },
+        plasma_gfap: { enabled: true, value: String(rec.plasma.plasma_gfap ?? prev.plasma_gfap?.value ?? 195.0) },
+      }))
+    } else if (stageNum === 3 && rec.mri) {
+      setFeats(prev => ({
+        ...prev,
+        hippocampus_cm3: { enabled: true, value: String(rec.mri.hippocampus_cm3 ?? prev.hippocampus_cm3?.value ?? 3.45) },
+        ventricles_cm3: { enabled: true, value: String(rec.mri.ventricles_cm3 ?? prev.ventricles_cm3?.value ?? 44.0) },
+        wmh_volume_cm3: { enabled: true, value: String(rec.mri.wmh_volume_cm3 ?? prev.wmh_volume_cm3?.value ?? 2.5) },
+        hippocampus_icv_ratio: { enabled: true, value: String(rec.mri.hippocampus_icv_ratio ?? prev.hippocampus_icv_ratio?.value ?? 0.0024) },
+      }))
+    } else if (stageNum === 4 && rec.pet) {
+      setFeats(prev => ({
+        ...prev,
+        centiloids: { enabled: true, value: String(rec.pet.centiloids ?? prev.centiloids?.value ?? 78.4) },
+        tau_suvr: { enabled: true, value: String(rec.pet.tau_suvr ?? prev.tau_suvr?.value ?? 1.48) },
+        microbleeds: { enabled: true, value: String(rec.pet.microbleeds ?? prev.microbleeds?.value ?? 0) },
+      }))
+    }
+  }
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setExtractStatus(`Parsing ${file.name}...`)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await fetch(`${apiBase}/api/lab/parse-report`, {
+        method: 'POST',
+        body: formData
+      })
+      const data = await res.json()
+      if (data?.parsed_report) {
+        const rep = data.parsed_report
+        setExtractStatus(`✅ Extracted from ${file.name} (${rep.raw_matches?.length || 0} biomarkers mapped)`)
+        setTimeout(() => setExtractStatus(null), 5000)
+
+        setFeats(prev => {
+          const updated = { ...prev }
+          if (rep.cognitive) {
+            if (rep.cognitive.mmse != null && updated.mmse) updated.mmse = { enabled: true, value: String(rep.cognitive.mmse) }
+            if (rep.cognitive.moca != null && updated.moca) updated.moca = { enabled: true, value: String(rep.cognitive.moca) }
+            if (rep.cognitive.cdrsb != null && updated.cdrsb) updated.cdrsb = { enabled: true, value: String(rep.cognitive.cdrsb) }
+            if (rep.cognitive.faq != null && updated.faq) updated.faq = { enabled: true, value: String(rep.cognitive.faq) }
+            if (rep.cognitive.adas13 != null && updated.adas13) updated.adas13 = { enabled: true, value: String(rep.cognitive.adas13) }
+            if (rep.cognitive.gds != null && updated.gds) updated.gds = { enabled: true, value: String(rep.cognitive.gds) }
+          }
+          if (rep.plasma) {
+            if (rep.plasma.plasma_ptau217 != null && updated.plasma_ptau217) updated.plasma_ptau217 = { enabled: true, value: String(rep.plasma.plasma_ptau217) }
+            if (rep.plasma.plasma_ab42_40 != null && updated.plasma_ab42_40) updated.plasma_ab42_40 = { enabled: true, value: String(rep.plasma.plasma_ab42_40) }
+            if (rep.plasma.plasma_nfl != null && updated.plasma_nfl) updated.plasma_nfl = { enabled: true, value: String(rep.plasma.plasma_nfl) }
+            if (rep.plasma.plasma_gfap != null && updated.plasma_gfap) updated.plasma_gfap = { enabled: true, value: String(rep.plasma.plasma_gfap) }
+          }
+          if (rep.mri) {
+            if (rep.mri.hippocampus_cm3 != null && updated.hippocampus_cm3) updated.hippocampus_cm3 = { enabled: true, value: String(rep.mri.hippocampus_cm3) }
+            if (rep.mri.ventricles_cm3 != null && updated.ventricles_cm3) updated.ventricles_cm3 = { enabled: true, value: String(rep.mri.ventricles_cm3) }
+            if (rep.mri.wmh_volume_cm3 != null && updated.wmh_volume_cm3) updated.wmh_volume_cm3 = { enabled: true, value: String(rep.mri.wmh_volume_cm3) }
+          }
+          if (rep.pet) {
+            if (rep.pet.centiloids != null && updated.centiloids) updated.centiloids = { enabled: true, value: String(rep.pet.centiloids) }
+            if (rep.pet.tau_suvr != null && updated.tau_suvr) updated.tau_suvr = { enabled: true, value: String(rep.pet.tau_suvr) }
+            if (rep.pet.microbleeds != null && updated.microbleeds) updated.microbleeds = { enabled: true, value: String(rep.pet.microbleeds) }
+          }
+          return updated
+        })
+      }
+    } catch (err) {
+      console.error(err)
+      setExtractStatus('Failed to parse file')
+      setTimeout(() => setExtractStatus(null), 3000)
+    }
+  }
+
+  const toggleVoiceDictation = () => {
+    if (isListening) {
+      setIsListening(false)
+      return
+    }
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (!SpeechRecognition) {
+      alert('Speech Recognition is supported natively in Chrome, Edge, and Safari.')
+      return
+    }
+    try {
+      const recognition = new SpeechRecognition()
+      recognition.continuous = false
+      recognition.interimResults = true
+      recognition.lang = 'en-US'
+
+      recognition.onstart = () => {
+        setIsListening(true)
+        setVoiceNote('Listening... Speak clinical scores (e.g. "MoCA 22, MMSE 24, ptau 0.35")')
+      }
+
+      recognition.onresult = (event: any) => {
+        const transcript = Array.from(event.results).map((r: any) => r[0].transcript).join(' ')
+        setVoiceNote(transcript)
+        
+        const extracted: Record<string, string> = {}
+        const mMoCA = transcript.match(/MoCA\s*(?:is|score|of)?\s*(\d+(?:\.\d+)?)/i)
+        if (mMoCA) extracted['moca'] = mMoCA[1]
+        const mMMSE = transcript.match(/MMSE\s*(?:is|score|of)?\s*(\d+(?:\.\d+)?)/i)
+        if (mMMSE) extracted['mmse'] = mMMSE[1]
+        const mCDR = transcript.match(/CDR(?:-|\s*)SB\s*(?:is|score|of)?\s*(\d+(?:\.\d+)?)/i)
+        if (mCDR) extracted['cdrsb'] = mCDR[1]
+        const mFAQ = transcript.match(/FAQ\s*(?:is|score|of)?\s*(\d+(?:\.\d+)?)/i)
+        if (mFAQ) extracted['faq'] = mFAQ[1]
+        const mPtau = transcript.match(/(?:p-?tau|tau\s*217)\s*(?:is|of|level)?\s*(\d+(?:\.\d+)?)/i)
+        if (mPtau) extracted['plasma_ptau217'] = mPtau[1]
+        const mHippo = transcript.match(/(?:hippocampus|hippocampal)\s*(?:is|volume|of)?\s*(\d+(?:\.\d+)?)/i)
+        if (mHippo) extracted['hippocampus_cm3'] = mHippo[1]
+        const mCent = transcript.match(/(?:centiloids?|amyloid)\s*(?:is|score|of)?\s*(\d+(?:\.\d+)?)/i)
+        if (mCent) extracted['centiloids'] = mCent[1]
+
+        if (Object.keys(extracted).length > 0) {
+          setFeats(prev => {
+            const updated = { ...prev }
+            for (const [k, v] of Object.entries(extracted)) {
+              if (updated[k]) updated[k] = { enabled: true, value: v }
+            }
+            return updated
+          })
+          setExtractStatus(`🎙️ Voice parsed: ${Object.entries(extracted).map(([k, v]) => `${k}=${v}`).join(', ')}`)
+          setTimeout(() => setExtractStatus(null), 5000)
+        }
+      }
+
+      recognition.onerror = () => { setIsListening(false); setVoiceNote('') }
+      recognition.onend = () => { setIsListening(false) }
+      recognition.start()
+    } catch (e) {
+      console.error(e)
+      setIsListening(false)
+    }
+  }
+
   // Clinical preset handlers
   const loadPreset = (type: 'ad' | 'mci' | 'healthy') => {
     if (stageNum === 1) {
@@ -3413,6 +3585,79 @@ function StageView({ patient, stageNum, onBack, apiBase, onRefresh }: { patient:
 
             {/* Modal Body */}
             <div className="p-6 space-y-5 overflow-y-auto flex-1">
+              {/* Intelligent Ingest Bar: Hospital EHR Sync, PDF Parser & Voice Dictation */}
+              <div className="p-4 bg-blue-50/60 rounded-2xl border border-blue-100 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-[#1A56DB] flex items-center gap-1.5">
+                    <Database size={14} /> Automated Hospital Data Ingest &amp; Voice Input
+                  </span>
+                  {extractStatus && (
+                    <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-full animate-pulse">
+                      {extractStatus}
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {/* 1. EHR Dropdown */}
+                  <div className="relative">
+                    <select
+                      onChange={e => { if (e.target.value) applyEhrRecord(e.target.value); e.target.value = ''; }}
+                      defaultValue=""
+                      className="w-full text-xs font-bold text-gray-800 bg-white border border-blue-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-xs cursor-pointer"
+                    >
+                      <option value="" disabled>🏥 Sync from Hospital EHR ▾</option>
+                      {ehrRecords.map(rec => (
+                        <option key={rec.id} value={rec.id}>
+                          {rec.patient_name} ({rec.mrn}) — Stage {rec.clinical_stage}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* 2. PDF Upload Button */}
+                  <div>
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileUpload}
+                      accept=".pdf,.txt,.json,.csv"
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-white hover:bg-gray-50 border border-blue-200 text-gray-800 rounded-xl text-xs font-bold transition shadow-xs"
+                    >
+                      <FileText size={14} className="text-blue-600" />
+                      <span>Upload Lab Report (PDF)</span>
+                    </button>
+                  </div>
+
+                  {/* 3. Voice Dictation Button */}
+                  <div>
+                    <button
+                      type="button"
+                      onClick={toggleVoiceDictation}
+                      className={`w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition shadow-xs ${
+                        isListening
+                          ? 'bg-red-500 text-white animate-pulse border border-red-600'
+                          : 'bg-white hover:bg-gray-50 border border-blue-200 text-gray-800'
+                      }`}
+                    >
+                      {isListening ? <MicOff size={14} /> : <Mic size={14} className="text-purple-600" />}
+                      <span>{isListening ? 'Stop Recording' : '🎙️ Voice Dictate Scores'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {voiceNote && (
+                  <div className="text-[11px] text-purple-900 bg-purple-50 p-2.5 rounded-xl border border-purple-200 font-medium">
+                    🗣️ <strong>Transcript:</strong> {voiceNote}
+                  </div>
+                )}
+              </div>
+
               {/* Preset Quick Selectors */}
               <div className="flex items-center justify-between p-3.5 bg-gray-50/80 rounded-2xl border border-gray-100">
                 <span className="text-xs font-black text-gray-600">Quick Clinical Presets:</span>
@@ -3967,6 +4212,97 @@ function NewPatientModal({ onClose, onSuccess, apiBase }: any) {
     has_smoking: false, has_family_history: false, has_anticoagulant: false,
   })
   const [saving, setSaving] = useState(false)
+  const [ehrRecords, setEhrRecords] = useState<any[]>([])
+  const [extractStatus, setExtractStatus] = useState<string | null>(null)
+  const [isListening, setIsListening] = useState(false)
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null)
+
+  useEffect(() => {
+    fetch(`${apiBase}/api/ehr/records`)
+      .then(res => res.json())
+      .then(data => { if (data?.records) setEhrRecords(data.records) })
+      .catch(() => {})
+  }, [apiBase])
+
+  const applyEhr = (recId: string) => {
+    const rec = ehrRecords.find(r => r.id === recId || r.mrn === recId)
+    if (!rec) return
+    setForm(prev => ({
+      ...prev,
+      name: rec.patient_name || prev.name,
+      age: rec.age || prev.age,
+      gender: rec.gender || prev.gender,
+      dob: rec.age ? `${2026 - rec.age}-05-14` : prev.dob,
+      education_years: rec.education_years || prev.education_years,
+      apoe: rec.apoe || prev.apoe,
+      referral: rec.referral || prev.referral,
+      complaint: rec.archetype || prev.complaint,
+      vitals_bp: rec.vitals?.blood_pressure || prev.vitals_bp,
+      vitals_bmi: rec.vitals?.bmi || prev.vitals_bmi,
+      has_hypertension: rec.vitals?.has_hypertension ?? prev.has_hypertension,
+      has_diabetes: rec.vitals?.has_diabetes ?? prev.has_diabetes,
+    }))
+    setExtractStatus(`✅ Imported EHR Profile: ${rec.patient_name}`)
+    setTimeout(() => setExtractStatus(null), 4000)
+  }
+
+  const handleLabUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setExtractStatus(`Extracting from ${file.name}...`)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await fetch(`${apiBase}/api/lab/parse-report`, { method: 'POST', body: fd })
+      const data = await res.json()
+      if (data?.parsed_report) {
+        const rep = data.parsed_report
+        setForm(prev => ({
+          ...prev,
+          name: rep.patient_name || prev.name,
+          age: rep.age || prev.age,
+          gender: rep.gender || prev.gender,
+          education_years: rep.education_years || prev.education_years,
+          apoe: rep.apoe || prev.apoe,
+        }))
+        setExtractStatus(`✅ Auto-filled from ${file.name}`)
+        setTimeout(() => setExtractStatus(null), 4000)
+      }
+    } catch {
+      setExtractStatus('Failed to parse file')
+      setTimeout(() => setExtractStatus(null), 3000)
+    }
+  }
+
+  const toggleVoice = () => {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (!SR) return alert('Speech Recognition is available in Chrome, Edge, and Safari.')
+    if (isListening) { setIsListening(false); return }
+    try {
+      const rec = new SR()
+      rec.continuous = false
+      rec.interimResults = false
+      rec.lang = 'en-US'
+      rec.onstart = () => setIsListening(true)
+      rec.onresult = (evt: any) => {
+        const text = evt.results[0][0].transcript
+        const nameM = text.match(/(?:patient|name is)\s*([A-Za-z\s]+?)(?:age|female|male|$)/i)
+        const ageM = text.match(/(?:age|aged)\s*(\d{2})/i)
+        const eduM = text.match(/(?:education|years)\s*(\d{1,2})/i)
+        setForm(prev => ({
+          ...prev,
+          name: nameM ? nameM[1].trim() : prev.name,
+          age: ageM ? Number(ageM[1]) : prev.age,
+          education_years: eduM ? Number(eduM[1]) : prev.education_years,
+        }))
+        setExtractStatus(`🎙️ Dictated: "${text}"`)
+        setTimeout(() => setExtractStatus(null), 4000)
+      }
+      rec.onerror = () => setIsListening(false)
+      rec.onend = () => setIsListening(false)
+      rec.start()
+    } catch { setIsListening(false) }
+  }
 
   const handleSubmit = async () => {
     if (!form.name.trim()) return alert('Patient name is required')
@@ -4016,6 +4352,55 @@ function NewPatientModal({ onClose, onSuccess, apiBase }: any) {
         </div>
 
         <div className="p-6 space-y-5 flex-1">
+          {/* Quick Ingest Toolbar */}
+          <div className="p-4 bg-blue-50/60 rounded-2xl border border-blue-100 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-black text-[#1A56DB] flex items-center gap-1.5">
+                <Database size={14} /> Quick Ingestion &amp; Voice Entry
+              </span>
+              {extractStatus && (
+                <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-full animate-pulse">
+                  {extractStatus}
+                </span>
+              )}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <select
+                onChange={e => { if (e.target.value) applyEhr(e.target.value); e.target.value = ''; }}
+                defaultValue=""
+                className="w-full text-xs font-bold text-gray-800 bg-white border border-blue-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+              >
+                <option value="" disabled>🏥 Sync from Hospital EHR ▾</option>
+                {ehrRecords.map(rec => (
+                  <option key={rec.id} value={rec.id}>{rec.patient_name} ({rec.mrn})</option>
+                ))}
+              </select>
+
+              <div>
+                <input type="file" ref={fileInputRef} onChange={handleLabUpload} accept=".pdf,.txt" className="hidden" />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-white hover:bg-gray-50 border border-blue-200 text-gray-800 rounded-xl text-xs font-bold transition shadow-xs"
+                >
+                  <FileText size={14} className="text-blue-600" />
+                  <span>Lab PDF Auto-Fill</span>
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={toggleVoice}
+                className={`w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition shadow-xs ${
+                  isListening ? 'bg-red-500 text-white animate-pulse' : 'bg-white hover:bg-gray-50 border border-blue-200 text-gray-800'
+                }`}
+              >
+                {isListening ? <MicOff size={14} /> : <Mic size={14} className="text-purple-600" />}
+                <span>{isListening ? 'Listening...' : '🎙️ Dictate Name & Age'}</span>
+              </button>
+            </div>
+          </div>
+
           {/* Form Fields Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
