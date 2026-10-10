@@ -44,6 +44,7 @@ from backend.database import (
     insert_new_patient_db,
     add_visit_db,
     delete_visit_db,
+    delete_escalation_db,
     update_visit_db,
     escalate_patient_stage_db,
     get_patient_timeline_db,
@@ -395,6 +396,15 @@ def delete_patient_visit(patient_id: str, visit_id: int):
     return {"status": "success", "message": f"Visit {visit_id} deleted", "patient": updated}
 
 
+@app.delete("/api/patients/{patient_id}/escalations/{escalation_id}")
+def delete_patient_escalation(patient_id: str, escalation_id: int):
+    """Deletes a specific stage escalation entry and recalculates patient's active stage."""
+    updated = delete_escalation_db(patient_id, escalation_id)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Patient or escalation not found")
+    return {"status": "success", "message": f"Escalation {escalation_id} deleted", "patient": updated}
+
+
 @app.put("/api/patients/{patient_id}/visits/{visit_id}")
 def update_patient_visit(patient_id: str, visit_id: int, payload: Dict[str, Any] = Body(...)):
     """Updates visit notes or metadata."""
@@ -516,7 +526,12 @@ def predict_triage(req: DynamicTriageRequest):
     feat_dict["Tau_MetaTemporal_SUVR"] = float(req.tau_suvr) if req.tau_suvr is not None else np.nan
 
     if req.apply_india_calibration:
-        feat_dict = apply_lasidad_calibration(feat_dict, req.cognitive)
+        edu = req.cognitive.education_years if req.cognitive.education_years is not None else 14.0
+        if edu < 10:
+            if not np.isnan(feat_dict.get("MMSCORE", np.nan)):
+                feat_dict["MMSCORE"] = min(30.0, feat_dict["MMSCORE"] + 1.5)
+            if not np.isnan(feat_dict.get("MOCA_Total", np.nan)):
+                feat_dict["MOCA_Total"] = min(30.0, feat_dict["MOCA_Total"] + 2.0)
 
     feature_cols = FEATURE_LISTS[stage]
     df_in = pd.DataFrame([feat_dict])

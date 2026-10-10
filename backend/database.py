@@ -641,7 +641,7 @@ def add_visit_db(patient_id, visit_data):
 
 
 def get_patient_timeline_db(patient_id):
-    """Returns chronological timeline of all events for a patient."""
+    """Returns chronological timeline of all events for a patient sorted newest to oldest."""
     conn = get_db()
     cursor = conn.cursor()
 
@@ -654,16 +654,19 @@ def get_patient_timeline_db(patient_id):
 
     canonical_id = p["id"]
     canonical_mrn = p["mrn"] or canonical_id
+    reg_time = p["created_at"] or "2024-09-12 09:00:00"
 
     events = []
     events.append({
         "id": "reg",
         "type": "registration",
-        "timestamp": p["created_at"] or "2024-09-12 09:00:00",
+        "timestamp": reg_time,
+        "display_date": str(reg_time)[:10],
         "title": "Patient Registered",
         "detail": f"{p['name']} enrolled in StepWise PRO system",
         "icon": "user-plus",
-        "color": "blue"
+        "color": "blue",
+        "can_delete": False,
     })
 
     # Visits matching either canonical_id or canonical_mrn
@@ -675,12 +678,16 @@ def get_patient_timeline_db(patient_id):
     for v in visits:
         vd = dict(v)
         sn = vd.get("stage_number", 1)
+        v_date = vd.get("visit_date") or vd.get("created_at") or reg_time
+        v_ts = f"{v_date} 10:00:00" if len(str(v_date)) == 10 else str(v_date)
+
         ev_obj = {**vd}
         ev_obj.update({
             "id": vd.get("id"),
             "visit_id": vd.get("id"),
             "type": "visit",
-            "timestamp": vd.get("visit_date") or vd.get("created_at", ""),
+            "timestamp": v_ts,
+            "display_date": str(v_date)[:10],
             "title": f"Stage {sn}: {stage_labels.get(sn, 'Assessment')} — {vd.get('visit_code', 'M00')}",
             "detail": vd.get("stage_dx") or f"Risk Score: {round((vd.get('risk_score') or 0) * 100)}%",
             "icon": "clipboard-check",
@@ -694,7 +701,7 @@ def get_patient_timeline_db(patient_id):
         events.append(ev_obj)
 
     # Escalations matching either canonical_id or canonical_mrn
-    cursor.execute("SELECT * FROM stage_escalations WHERE patient_id IN (?, ?) ORDER BY timestamp ASC", (canonical_id, canonical_mrn))
+    cursor.execute("SELECT * FROM stage_escalations WHERE patient_id IN (?, ?) ORDER BY id ASC", (canonical_id, canonical_mrn))
     escalations = cursor.fetchall()
     for e in escalations:
         ed = dict(e)
@@ -702,24 +709,65 @@ def get_patient_timeline_db(patient_id):
         dec_labels = {
             "escalate": f"Escalated → Stage {ed['to_stage']}",
             "routine": "Returned to Routine Care",
-            "more_data": "More Data Requested"
+            "more_data": "More Data Requested",
+            "revisit": "Revisit Cycle Initiated"
         }
+        e_ts = ed.get("timestamp") or reg_time
+        e_ts_full = f"{e_ts} 14:00:00" if len(str(e_ts)) == 10 else str(e_ts)
+
         events.append({
             "id": ed.get("id"),
+            "escalation_id": ed.get("id"),
             "type": "escalation",
-            "timestamp": ed.get("timestamp", ""),
+            "timestamp": e_ts_full,
+            "display_date": str(e_ts)[:10],
             "title": dec_labels.get(dec, f"Clinical Decision: Stage {ed['to_stage']}"),
             "detail": ed.get("clinical_rationale", ""),
             "icon": "shield-check",
             "color": "green" if dec == "escalate" else ("yellow" if dec == "more_data" else "gray"),
             "doctor": ed.get("doctor_name", ""),
-            "can_delete": False,
+            "can_delete": True,
         })
 
-    # Sort all events by timestamp
-    events.sort(key=lambda x: str(x.get("timestamp") or ""))
+    # Sort all events strictly newest to oldest (DESCENDING)
+    def event_sort_key(ev):
+        date_str = str(ev.get("timestamp") or "")[:10]
+        t_rank = 3 if ev.get("type") == "escalation" else (2 if ev.get("type") == "visit" else 1)
+        ev_id = ev.get("id") if isinstance(ev.get("id"), int) else 0
+        return (date_str, t_rank, ev_id)
+
+    events.sort(key=event_sort_key, reverse=True)
     conn.close()
     return events
+
+
+def delete_escalation_db(patient_id: str, escalation_id: int):
+    """Deletes a stage escalation log and recalculates current stage."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, mrn FROM patients WHERE id = ? OR mrn = ?", (patient_id, patient_id))
+    p = cursor.fetchone()
+    if not p:
+        conn.close()
+        return None
+    actual_pid = p["id"]
+    actual_mrn = p["mrn"] or actual_pid
+
+    cursor.execute("DELETE FROM stage_escalations WHERE id = ? AND patient_id IN (?, ?)", (escalation_id, actual_pid, actual_mrn))
+
+    # Recalculate max stage from remaining visits and escalations
+    cursor.execute("SELECT MAX(stage_number) as ms FROM visits WHERE patient_id IN (?, ?)", (actual_pid, actual_mrn))
+    row_v = cursor.fetchone()
+    cursor.execute("SELECT MAX(to_stage) as me FROM stage_escalations WHERE patient_id IN (?, ?)", (actual_pid, actual_mrn))
+    row_e = cursor.fetchone()
+
+    max_stage = max(row_v["ms"] if row_v and row_v["ms"] else 0, row_e["me"] if row_e and row_e["me"] else 0)
+    max_stage = max(1, max_stage)
+    cursor.execute("UPDATE patients SET current_stage = ? WHERE id IN (?, ?)", (max_stage, actual_pid, actual_mrn))
+
+    conn.commit()
+    conn.close()
+    return fetch_patient_by_id_db(actual_pid)
 
 
 def delete_visit_db(patient_id: str, visit_id: int):
