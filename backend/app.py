@@ -491,43 +491,158 @@ def predict_triage(req: DynamicTriageRequest):
     if stage not in MODELS:
         raise HTTPException(status_code=400, detail=f"Model for Stage {stage} is not loaded")
 
+    # If patient exists in DB, fetch historical data to backfill missing prior-stage features
+    p_db = fetch_patient_by_id_db(req.patient_id) if req.patient_id else None
+    s1_db = (p_db.get("stage1") if p_db else None) or {}
+    s2_db = (p_db.get("stage2") if p_db else None) or {}
+    s3_db = (p_db.get("stage3") if p_db else None) or {}
+    s4_db = (p_db.get("stage4") if p_db else None) or {}
+
     feat_dict = {}
-    feat_dict["AGE"] = req.cognitive.age
-    feat_dict["PTGENDER"] = 2 if req.cognitive.gender.lower() == "female" else 1
-    feat_dict["PTEDUCAT"] = req.cognitive.education_years
+    
+    # Demographics & Clinical Baseline
+    age_val = req.cognitive.age if req.cognitive.age is not None else (p_db.get("age") if p_db else 72.0)
+    gender_str = req.cognitive.gender if req.cognitive.gender else (p_db.get("gender") if p_db else "Female")
+    edu_val = req.cognitive.education_years if req.cognitive.education_years is not None else (p_db.get("education_years") if p_db else 14.0)
 
-    feat_dict["MMSCORE"] = float(req.cognitive.mmse) if req.cognitive.mmse is not None else np.nan
-    feat_dict["MOCA_Total"] = float(req.cognitive.moca) if req.cognitive.moca is not None else np.nan
-    feat_dict["CDRSB"] = float(req.cognitive.cdrsb) if req.cognitive.cdrsb is not None else np.nan
-    feat_dict["FAQTOTAL"] = float(req.cognitive.faq) if req.cognitive.faq is not None else np.nan
-    feat_dict["ADAS13"] = float(req.cognitive.adas13) if req.cognitive.adas13 is not None else np.nan
+    feat_dict["AGE"] = float(age_val)
+    feat_dict["PTGENDER"] = 2 if str(gender_str).lower() == "female" else 1
+    feat_dict["PTEDUCAT"] = float(edu_val)
+    feat_dict["PTMARRY"] = 1.0
 
-    if req.cognitive.mmse is not None:
-        feat_dict["MMSE_Orientation"] = min(10.0, req.cognitive.mmse * 0.33)
-        feat_dict["MMSE_Recall"] = min(3.0, req.cognitive.mmse * 0.10)
-        feat_dict["MMSE_Attention"] = min(5.0, req.cognitive.mmse * 0.16)
-        feat_dict["MMSE_Language"] = min(9.0, req.cognitive.mmse * 0.30)
+    # Stage 1: Cognitive features (with historical backfill)
+    mmse_val = req.cognitive.mmse if req.cognitive.mmse is not None else (s1_db.get("mmse") or s1_db.get("moca"))
+    moca_val = req.cognitive.moca if req.cognitive.moca is not None else (s1_db.get("moca") or s1_db.get("mmse"))
+    cdrsb_val = req.cognitive.cdrsb if req.cognitive.cdrsb is not None else s1_db.get("cdrsb")
+    faq_val = req.cognitive.faq if req.cognitive.faq is not None else s1_db.get("faq")
+    adas_val = req.cognitive.adas13 if req.cognitive.adas13 is not None else s1_db.get("adas13")
+    gds_val = req.cognitive.gds if req.cognitive.gds is not None else s1_db.get("gds")
+
+    feat_dict["MMSCORE"] = float(mmse_val) if mmse_val is not None else np.nan
+    feat_dict["MOCA_Total"] = float(moca_val) if moca_val is not None else np.nan
+    feat_dict["CDRSB"] = float(cdrsb_val) if cdrsb_val is not None else np.nan
+    feat_dict["FAQTOTAL"] = float(faq_val) if faq_val is not None else np.nan
+    feat_dict["ADAS13"] = float(adas_val) if adas_val is not None else np.nan
+
+    if mmse_val is not None:
+        feat_dict["MMSE_Orientation"] = min(10.0, float(mmse_val) * 0.33)
+        feat_dict["MMSE_Recall"] = min(3.0, float(mmse_val) * 0.10)
+        feat_dict["MMSE_Attention"] = min(5.0, float(mmse_val) * 0.16)
+        feat_dict["MMSE_Language"] = min(9.0, float(mmse_val) * 0.30)
     else:
         feat_dict["MMSE_Orientation"] = np.nan
         feat_dict["MMSE_Recall"] = np.nan
         feat_dict["MMSE_Attention"] = np.nan
         feat_dict["MMSE_Language"] = np.nan
 
-    feat_dict["APOE4_Count"] = float(req.apoe4_count) if req.apoe4_count is not None else np.nan
-    feat_dict["plasma_ptau217_fuji"] = float(req.plasma_ptau217) if req.plasma_ptau217 is not None else np.nan
-    feat_dict["plasma_ptau217_c2n"] = float(req.plasma_ptau217 * 1.05) if req.plasma_ptau217 is not None else np.nan
-    feat_dict["plasma_ab42_ab40_c2n"] = float(req.plasma_ab42_40) if req.plasma_ab42_40 is not None else np.nan
-    feat_dict["plasma_nfl_fnih"] = float(req.plasma_nfl) if req.plasma_nfl is not None else np.nan
-    feat_dict["plasma_gfap_fnih"] = float(req.plasma_gfap) if req.plasma_gfap is not None else np.nan
-    feat_dict["hippocampus_icv_ratio"] = float(req.hippocampus_icv_ratio) if req.hippocampus_icv_ratio is not None else np.nan
-    feat_dict["wmh_volume_cm3"] = float(req.wmh_volume_cm3) if req.wmh_volume_cm3 is not None else np.nan
-    feat_dict["Amyloid_Centiloids"] = float(req.centiloids) if req.centiloids is not None else np.nan
-    feat_dict["Amyloid_Positive"] = 1.0 if req.centiloids is not None and req.centiloids >= 20.0 else (0.0 if req.centiloids is not None else np.nan)
-    feat_dict["Tau_MetaTemporal_SUVR"] = float(req.tau_suvr) if req.tau_suvr is not None else np.nan
+    if moca_val is not None:
+        feat_dict["MoCA_Visuospatial"] = min(5.0, float(moca_val) * 0.18)
+        feat_dict["MoCA_Naming"] = min(3.0, float(moca_val) * 0.10)
+        feat_dict["MoCA_Attention"] = min(6.0, float(moca_val) * 0.22)
+        feat_dict["MoCA_Delayed_Recall"] = min(5.0, float(moca_val) * 0.15)
+        feat_dict["MoCA_Orientation"] = min(6.0, float(moca_val) * 0.20)
 
+    # Genetic APOE
+    apoe_val = req.apoe4_count
+    if apoe_val is None and p_db and p_db.get("apoe"):
+        apoe_str = str(p_db.get("apoe"))
+        apoe_val = 2 if "ε4/ε4" in apoe_str else (1 if "ε4" in apoe_str else 0)
+    feat_dict["APOE4_Count"] = float(apoe_val) if apoe_val is not None else 0.0
+
+    # Stage 2: Plasma Proteomics features
+    ptau_val = req.plasma_ptau217 if req.plasma_ptau217 is not None else (s2_db.get("plasma_ptau217") or s2_db.get("ptau217"))
+    ab42_40_val = req.plasma_ab42_40 if req.plasma_ab42_40 is not None else (s2_db.get("plasma_ab42_40") or s2_db.get("ab42_40"))
+    nfl_val = req.plasma_nfl if req.plasma_nfl is not None else s2_db.get("plasma_nfl")
+    gfap_val = req.plasma_gfap if req.plasma_gfap is not None else s2_db.get("plasma_gfap")
+
+    if ptau_val is not None:
+        ptau_f = float(ptau_val)
+        ptau_z = (ptau_f - 0.15) / 0.08
+        feat_dict["c2n_pT217_C2N_z"] = ptau_z
+        feat_dict["c2n_npT217_C2N_z"] = ptau_z * 0.95
+        feat_dict["c2n_pT217_npT217_C2N_z"] = ptau_z * 1.1
+        feat_dict["upenn_pT217_F_z"] = ptau_z
+        feat_dict["composite_ptau217_z"] = ptau_z
+        feat_dict["janssen_ptau217_z"] = ptau_z
+        feat_dict["lilly_ptau217_z"] = ptau_z
+        feat_dict["blennow_PLASMATAU_z"] = ptau_z
+        feat_dict["roche_PTAU_z"] = ptau_z
+        feat_dict["roche_TAU_z"] = ptau_z
+        feat_dict["c2n_is_amyloid_pos"] = 1.0 if ptau_f >= 0.20 else 0.0
+        feat_dict["upenn_is_amyloid_pos"] = 1.0 if ptau_f >= 0.20 else 0.0
+
+    if ab42_40_val is not None:
+        ab_f = float(ab42_40_val)
+        ab_z = (0.095 - ab_f) / 0.02
+        feat_dict["c2n_AB42_AB40_C2N_z"] = ab_z
+        feat_dict["c2n_AB42_C2N_z"] = -ab_z * 0.8
+        feat_dict["c2n_AB40_C2N_z"] = ab_z * 0.5
+        feat_dict["upenn_AB42_AB40_F_z"] = ab_z
+        feat_dict["upenn_AB42_F_z"] = -ab_z * 0.8
+        feat_dict["upenn_AB40_F_z"] = ab_z * 0.5
+        feat_dict["composite_abeta_ratio_z"] = ab_z
+        feat_dict["c2n_APS2_C2N_z"] = ab_z * 1.2
+
+    if gfap_val is not None:
+        gfap_f = float(gfap_val)
+        gfap_z = (gfap_f - 120.0) / 60.0
+        feat_dict["upenn_GFAP_Q_z"] = gfap_z
+        feat_dict["composite_gfap_z"] = gfap_z
+
+    if nfl_val is not None:
+        nfl_f = float(nfl_val)
+        nfl_z = (nfl_f - 12.0) / 5.0
+        feat_dict["upenn_NfL_Q_z"] = nfl_z
+        feat_dict["composite_nfl_z"] = nfl_z
+
+    # Stage 3: Volumetric MRI Morphometry features
+    hippo_cm3 = req.hippocampus_cm3 if req.hippocampus_cm3 is not None else (s3_db.get("hippocampus_cm3") or s3_db.get("hippoVol"))
+    vent_cm3 = req.ventricles_cm3 if req.ventricles_cm3 is not None else (s3_db.get("ventricles_cm3") or s3_db.get("ventriclesVol"))
+    hippo_icv = req.hippocampus_icv_ratio if req.hippocampus_icv_ratio is not None else s3_db.get("hippocampus_icv_ratio")
+    wmh_cm3 = req.wmh_volume_cm3 if req.wmh_volume_cm3 is not None else s3_db.get("wmh_volume_cm3")
+
+    if hippo_cm3 is not None:
+        h_f = float(hippo_cm3)
+        feat_dict["hippocampus_total_vol"] = h_f * 1000.0  # mm3
+        feat_dict["hippocampus_icv_ratio"] = float(hippo_icv) if hippo_icv is not None else (h_f / 1500.0)
+        feat_dict["entorhinal_avg_vol"] = h_f * 380.0
+        feat_dict["midtemp_avg_vol"] = h_f * 4500.0
+
+    if vent_cm3 is not None:
+        v_f = float(vent_cm3)
+        feat_dict["ventricles_icv_ratio"] = v_f / 1500.0
+
+    if wmh_cm3 is not None:
+        w_f = float(wmh_cm3)
+        feat_dict["wmh_volume_cm3"] = w_f
+        feat_dict["wmh_tcv_ratio"] = w_f / 1500.0
+
+    # Stage 4: Molecular Amyloid PET features
+    cent_val = req.centiloids if req.centiloids is not None else s4_db.get("centiloids")
+    tau_suvr = req.tau_suvr if req.tau_suvr is not None else (s4_db.get("tau_suvr") or s4_db.get("suvr"))
+    microbleeds_val = req.microbleeds if req.microbleeds is not None else (s4_db.get("microbleeds") or s4_db.get("microbleedsCount") or 0)
+
+    if cent_val is not None:
+        c_f = float(cent_val)
+        feat_dict["Amyloid_Centiloids"] = c_f
+        feat_dict["Amyloid_Positive"] = 1.0 if c_f >= 25.0 else 0.0
+        feat_dict["Amyloid_Summary_SUVR"] = 1.0 + (c_f / 100.0) * 0.5
+        feat_dict["Amyloid_Prefrontal_SUVR"] = 1.0 + (c_f / 100.0) * 0.55
+        feat_dict["Amyloid_Parietal_SUVR"] = 1.0 + (c_f / 100.0) * 0.52
+
+    if tau_suvr is not None:
+        t_f = float(tau_suvr)
+        feat_dict["Tau_MetaTemporal_SUVR"] = t_f
+        feat_dict["Tau_Entorhinal_SUVR"] = t_f * 1.08
+        feat_dict["Tau_Hippocampus_SUVR"] = t_f * 1.04
+        feat_dict["Tau_InferiorTemporal_SUVR"] = t_f * 1.02
+        feat_dict["Tau_Braak_High"] = 1.0 if t_f >= 1.30 else 0.0
+
+    feat_dict["ARIA_E_Risk_Score"] = float(microbleeds_val) * 0.25
+
+    # India LASI-DAD Normative Calibration Offset
     if req.apply_india_calibration:
-        edu = req.cognitive.education_years if req.cognitive.education_years is not None else 14.0
-        if edu < 10:
+        if edu_val < 10:
             if not np.isnan(feat_dict.get("MMSCORE", np.nan)):
                 feat_dict["MMSCORE"] = min(30.0, feat_dict["MMSCORE"] + 1.5)
             if not np.isnan(feat_dict.get("MOCA_Total", np.nan)):
@@ -544,11 +659,9 @@ def predict_triage(req: DynamicTriageRequest):
     raw_prob = float(model.predict_proba(X_eval)[:, 1][0])
     
     # 1. Multi-Modal Disease Severity Index (0.0 to 1.0)
-    # Reflects immediate clinical impairment and biomarker elevations dynamically
     severity_index = float(raw_prob)
     
     # 2. Smooth Platt Scaling for 24-Month Epidemiological Progression Risk
-    # Maps log-odds continuously to avoid compressed flat plateaus
     eps = 1e-6
     raw_clamped = max(eps, min(1.0 - eps, raw_prob))
     logit = float(np.log(raw_clamped / (1.0 - raw_clamped)))
@@ -565,22 +678,23 @@ def predict_triage(req: DynamicTriageRequest):
     cal_prob = max(0.02, min(0.98, cal_prob))
 
     # Dynamic 3-Class Continuous Diagnosis Probabilities (NIA-AA Clinical Criteria)
-    mmse_val = req.cognitive.mmse
-    moca_val = req.cognitive.moca
-    cdrsb_val = req.cognitive.cdrsb
-    cent_val = req.centiloids
-
     is_normal = (
-        (mmse_val is not None and mmse_val >= 27 and (cdrsb_val is None or cdrsb_val <= 1.0)) or
-        (moca_val is not None and moca_val >= 26 and (cdrsb_val is None or cdrsb_val <= 1.0)) or
-        (severity_index < 0.28 and (mmse_val is None or mmse_val >= 26))
+        (mmse_val is not None and float(mmse_val) >= 27 and (cdrsb_val is None or float(cdrsb_val) <= 0.5)) or
+        (moca_val is not None and float(moca_val) >= 26 and (cdrsb_val is None or float(cdrsb_val) <= 0.5)) or
+        (ptau_val is not None and float(ptau_val) <= 0.15 and (mmse_val is None or float(mmse_val) >= 25)) or
+        (hippo_cm3 is not None and float(hippo_cm3) >= 4.0 and (mmse_val is None or float(mmse_val) >= 25)) or
+        (cent_val is not None and float(cent_val) < 20.0 and (mmse_val is None or float(mmse_val) >= 25)) or
+        (severity_index < 0.28)
     )
     is_dementia = (
-        (mmse_val is not None and mmse_val <= 20) or
-        (moca_val is not None and moca_val <= 16) or
-        (cdrsb_val is not None and cdrsb_val >= 6.0) or
-        (cent_val is not None and cent_val >= 60.0) or
-        (severity_index >= 0.85 and (mmse_val is None or mmse_val <= 22))
+        (mmse_val is not None and float(mmse_val) <= 20) or
+        (moca_val is not None and float(moca_val) <= 16) or
+        (cdrsb_val is not None and float(cdrsb_val) >= 4.0) or
+        (ptau_val is not None and float(ptau_val) >= 0.35) or
+        (hippo_cm3 is not None and float(hippo_cm3) <= 2.95) or
+        (cent_val is not None and float(cent_val) >= 60.0) or
+        (tau_suvr is not None and float(tau_suvr) >= 1.50) or
+        (severity_index >= 0.75)
     )
 
     if is_normal and not is_dementia:

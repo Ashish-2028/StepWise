@@ -2424,40 +2424,43 @@ function StageView({ patient, stageNum, onBack, apiBase, onRefresh }: { patient:
     setExtractStatus(`Imported: ${rec.patient_name} (${rec.archetype})`)
     setTimeout(() => setExtractStatus(null), 4000)
 
+    let updated: Record<string, { enabled: boolean; value: string }> = { ...feats }
     if (stageNum === 1 && rec.cognitive) {
-      setFeats(prev => ({
-        ...prev,
-        mmse: { enabled: true, value: String(rec.cognitive.mmse ?? prev.mmse?.value ?? 24) },
-        moca: { enabled: true, value: String(rec.cognitive.moca ?? prev.moca?.value ?? 22) },
-        cdrsb: { enabled: true, value: String(rec.cognitive.cdrsb ?? prev.cdrsb?.value ?? 1.5) },
-        faq: { enabled: true, value: String(rec.cognitive.faq ?? prev.faq?.value ?? 4.0) },
-        adas13: { enabled: true, value: String(rec.cognitive.adas13 ?? prev.adas13?.value ?? 24.0) },
-        gds: { enabled: true, value: String(rec.cognitive.gds ?? prev.gds?.value ?? 2.0) },
-      }))
+      updated = {
+        ...updated,
+        mmse: { enabled: true, value: String(rec.cognitive.mmse ?? updated.mmse?.value ?? 24) },
+        moca: { enabled: true, value: String(rec.cognitive.moca ?? updated.moca?.value ?? 22) },
+        cdrsb: { enabled: true, value: String(rec.cognitive.cdrsb ?? updated.cdrsb?.value ?? 1.5) },
+        faq: { enabled: true, value: String(rec.cognitive.faq ?? updated.faq?.value ?? 4.0) },
+        adas13: { enabled: true, value: String(rec.cognitive.adas13 ?? updated.adas13?.value ?? 24.0) },
+        gds: { enabled: true, value: String(rec.cognitive.gds ?? updated.gds?.value ?? 2.0) },
+      }
     } else if (stageNum === 2 && rec.plasma) {
-      setFeats(prev => ({
-        ...prev,
-        plasma_ptau217: { enabled: true, value: String(rec.plasma.plasma_ptau217 ?? prev.plasma_ptau217?.value ?? 0.24) },
-        plasma_ab42_40: { enabled: true, value: String(rec.plasma.plasma_ab42_40 ?? prev.plasma_ab42_40?.value ?? 0.082) },
-        plasma_nfl: { enabled: true, value: String(rec.plasma.plasma_nfl ?? prev.plasma_nfl?.value ?? 15.4) },
-        plasma_gfap: { enabled: true, value: String(rec.plasma.plasma_gfap ?? prev.plasma_gfap?.value ?? 195.0) },
-      }))
+      updated = {
+        ...updated,
+        plasma_ptau217: { enabled: true, value: String(rec.plasma.plasma_ptau217 ?? updated.plasma_ptau217?.value ?? 0.24) },
+        plasma_ab42_40: { enabled: true, value: String(rec.plasma.plasma_ab42_40 ?? updated.plasma_ab42_40?.value ?? 0.082) },
+        plasma_nfl: { enabled: true, value: String(rec.plasma.plasma_nfl ?? updated.plasma_nfl?.value ?? 15.4) },
+        plasma_gfap: { enabled: true, value: String(rec.plasma.plasma_gfap ?? updated.plasma_gfap?.value ?? 195.0) },
+      }
     } else if (stageNum === 3 && rec.mri) {
-      setFeats(prev => ({
-        ...prev,
-        hippocampus_cm3: { enabled: true, value: String(rec.mri.hippocampus_cm3 ?? prev.hippocampus_cm3?.value ?? 3.45) },
-        ventricles_cm3: { enabled: true, value: String(rec.mri.ventricles_cm3 ?? prev.ventricles_cm3?.value ?? 44.0) },
-        wmh_volume_cm3: { enabled: true, value: String(rec.mri.wmh_volume_cm3 ?? prev.wmh_volume_cm3?.value ?? 2.5) },
-        hippocampus_icv_ratio: { enabled: true, value: String(rec.mri.hippocampus_icv_ratio ?? prev.hippocampus_icv_ratio?.value ?? 0.0024) },
-      }))
+      updated = {
+        ...updated,
+        hippocampus_cm3: { enabled: true, value: String(rec.mri.hippocampus_cm3 ?? updated.hippocampus_cm3?.value ?? 3.45) },
+        ventricles_cm3: { enabled: true, value: String(rec.mri.ventricles_cm3 ?? updated.ventricles_cm3?.value ?? 44.0) },
+        wmh_volume_cm3: { enabled: true, value: String(rec.mri.wmh_volume_cm3 ?? updated.wmh_volume_cm3?.value ?? 2.5) },
+        hippocampus_icv_ratio: { enabled: true, value: String(rec.mri.hippocampus_icv_ratio ?? updated.hippocampus_icv_ratio?.value ?? 0.0024) },
+      }
     } else if (stageNum === 4 && rec.pet) {
-      setFeats(prev => ({
-        ...prev,
-        centiloids: { enabled: true, value: String(rec.pet.centiloids ?? prev.centiloids?.value ?? 78.4) },
-        tau_suvr: { enabled: true, value: String(rec.pet.tau_suvr ?? prev.tau_suvr?.value ?? 1.48) },
-        microbleeds: { enabled: true, value: String(rec.pet.microbleeds ?? prev.microbleeds?.value ?? 0) },
-      }))
+      updated = {
+        ...updated,
+        centiloids: { enabled: true, value: String(rec.pet.centiloids ?? updated.centiloids?.value ?? 78.4) },
+        tau_suvr: { enabled: true, value: String(rec.pet.tau_suvr ?? updated.tau_suvr?.value ?? 1.48) },
+        microbleeds: { enabled: true, value: String(rec.pet.microbleeds ?? updated.microbleeds?.value ?? 0) },
+      }
     }
+    setFeats(updated)
+    runInference(false, updated)
   }
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2477,34 +2480,33 @@ function StageView({ patient, stageNum, onBack, apiBase, onRefresh }: { patient:
         setExtractStatus(`✅ Extracted from ${file.name} (${rep.raw_matches?.length || 0} biomarkers mapped)`)
         setTimeout(() => setExtractStatus(null), 5000)
 
-        setFeats(prev => {
-          const updated = { ...prev }
-          if (rep.cognitive) {
-            if (rep.cognitive.mmse != null && updated.mmse) updated.mmse = { enabled: true, value: String(rep.cognitive.mmse) }
-            if (rep.cognitive.moca != null && updated.moca) updated.moca = { enabled: true, value: String(rep.cognitive.moca) }
-            if (rep.cognitive.cdrsb != null && updated.cdrsb) updated.cdrsb = { enabled: true, value: String(rep.cognitive.cdrsb) }
-            if (rep.cognitive.faq != null && updated.faq) updated.faq = { enabled: true, value: String(rep.cognitive.faq) }
-            if (rep.cognitive.adas13 != null && updated.adas13) updated.adas13 = { enabled: true, value: String(rep.cognitive.adas13) }
-            if (rep.cognitive.gds != null && updated.gds) updated.gds = { enabled: true, value: String(rep.cognitive.gds) }
-          }
-          if (rep.plasma) {
-            if (rep.plasma.plasma_ptau217 != null && updated.plasma_ptau217) updated.plasma_ptau217 = { enabled: true, value: String(rep.plasma.plasma_ptau217) }
-            if (rep.plasma.plasma_ab42_40 != null && updated.plasma_ab42_40) updated.plasma_ab42_40 = { enabled: true, value: String(rep.plasma.plasma_ab42_40) }
-            if (rep.plasma.plasma_nfl != null && updated.plasma_nfl) updated.plasma_nfl = { enabled: true, value: String(rep.plasma.plasma_nfl) }
-            if (rep.plasma.plasma_gfap != null && updated.plasma_gfap) updated.plasma_gfap = { enabled: true, value: String(rep.plasma.plasma_gfap) }
-          }
-          if (rep.mri) {
-            if (rep.mri.hippocampus_cm3 != null && updated.hippocampus_cm3) updated.hippocampus_cm3 = { enabled: true, value: String(rep.mri.hippocampus_cm3) }
-            if (rep.mri.ventricles_cm3 != null && updated.ventricles_cm3) updated.ventricles_cm3 = { enabled: true, value: String(rep.mri.ventricles_cm3) }
-            if (rep.mri.wmh_volume_cm3 != null && updated.wmh_volume_cm3) updated.wmh_volume_cm3 = { enabled: true, value: String(rep.mri.wmh_volume_cm3) }
-          }
-          if (rep.pet) {
-            if (rep.pet.centiloids != null && updated.centiloids) updated.centiloids = { enabled: true, value: String(rep.pet.centiloids) }
-            if (rep.pet.tau_suvr != null && updated.tau_suvr) updated.tau_suvr = { enabled: true, value: String(rep.pet.tau_suvr) }
-            if (rep.pet.microbleeds != null && updated.microbleeds) updated.microbleeds = { enabled: true, value: String(rep.pet.microbleeds) }
-          }
-          return updated
-        })
+        const updated = { ...feats }
+        if (rep.cognitive) {
+          if (rep.cognitive.mmse != null && updated.mmse) updated.mmse = { enabled: true, value: String(rep.cognitive.mmse) }
+          if (rep.cognitive.moca != null && updated.moca) updated.moca = { enabled: true, value: String(rep.cognitive.moca) }
+          if (rep.cognitive.cdrsb != null && updated.cdrsb) updated.cdrsb = { enabled: true, value: String(rep.cognitive.cdrsb) }
+          if (rep.cognitive.faq != null && updated.faq) updated.faq = { enabled: true, value: String(rep.cognitive.faq) }
+          if (rep.cognitive.adas13 != null && updated.adas13) updated.adas13 = { enabled: true, value: String(rep.cognitive.adas13) }
+          if (rep.cognitive.gds != null && updated.gds) updated.gds = { enabled: true, value: String(rep.cognitive.gds) }
+        }
+        if (rep.plasma) {
+          if (rep.plasma.plasma_ptau217 != null && updated.plasma_ptau217) updated.plasma_ptau217 = { enabled: true, value: String(rep.plasma.plasma_ptau217) }
+          if (rep.plasma.plasma_ab42_40 != null && updated.plasma_ab42_40) updated.plasma_ab42_40 = { enabled: true, value: String(rep.plasma.plasma_ab42_40) }
+          if (rep.plasma.plasma_nfl != null && updated.plasma_nfl) updated.plasma_nfl = { enabled: true, value: String(rep.plasma.plasma_nfl) }
+          if (rep.plasma.plasma_gfap != null && updated.plasma_gfap) updated.plasma_gfap = { enabled: true, value: String(rep.plasma.plasma_gfap) }
+        }
+        if (rep.mri) {
+          if (rep.mri.hippocampus_cm3 != null && updated.hippocampus_cm3) updated.hippocampus_cm3 = { enabled: true, value: String(rep.mri.hippocampus_cm3) }
+          if (rep.mri.ventricles_cm3 != null && updated.ventricles_cm3) updated.ventricles_cm3 = { enabled: true, value: String(rep.mri.ventricles_cm3) }
+          if (rep.mri.wmh_volume_cm3 != null && updated.wmh_volume_cm3) updated.wmh_volume_cm3 = { enabled: true, value: String(rep.mri.wmh_volume_cm3) }
+        }
+        if (rep.pet) {
+          if (rep.pet.centiloids != null && updated.centiloids) updated.centiloids = { enabled: true, value: String(rep.pet.centiloids) }
+          if (rep.pet.tau_suvr != null && updated.tau_suvr) updated.tau_suvr = { enabled: true, value: String(rep.pet.tau_suvr) }
+          if (rep.pet.microbleeds != null && updated.microbleeds) updated.microbleeds = { enabled: true, value: String(rep.pet.microbleeds) }
+        }
+        setFeats(updated)
+        runInference(false, updated)
       }
     } catch (err) {
       console.error(err)
@@ -2566,13 +2568,12 @@ function StageView({ patient, stageNum, onBack, apiBase, onRefresh }: { patient:
 
         if (Object.keys(extracted).length > 0) {
           setVoiceExtracted(extracted)
-          setFeats(prev => {
-            const updated = { ...prev }
-            for (const [k, v] of Object.entries(extracted)) {
-              if (updated[k]) updated[k] = { enabled: true, value: v }
-            }
-            return updated
-          })
+          const updated = { ...feats }
+          for (const [k, v] of Object.entries(extracted)) {
+            if (updated[k]) updated[k] = { enabled: true, value: v }
+          }
+          setFeats(updated)
+          runInference(false, updated)
           setExtractStatus(`🎙️ Voice parsed: ${Object.entries(extracted).map(([k, v]) => `${k}=${v}`).join(', ')}`)
           setTimeout(() => setExtractStatus(null), 5000)
         }
@@ -2589,41 +2590,44 @@ function StageView({ patient, stageNum, onBack, apiBase, onRefresh }: { patient:
 
   // Clinical preset handlers
   const loadPreset = (type: 'ad' | 'mci' | 'healthy') => {
+    let nextFeats: Record<string, { enabled: boolean; value: string }> = {}
     if (stageNum === 1) {
-      if (type === 'ad') setFeats({ mmse: { enabled: true, value: '18' }, moca: { enabled: true, value: '16' }, cdrsb: { enabled: true, value: '4.5' }, faq: { enabled: true, value: '12' }, adas13: { enabled: true, value: '38' }, gds: { enabled: true, value: '4' } })
-      else if (type === 'mci') setFeats({ mmse: { enabled: true, value: '24' }, moca: { enabled: true, value: '21' }, cdrsb: { enabled: true, value: '1.5' }, faq: { enabled: true, value: '5' }, adas13: { enabled: true, value: '24' }, gds: { enabled: true, value: '2' } })
-      else setFeats({ mmse: { enabled: true, value: '29' }, moca: { enabled: true, value: '28' }, cdrsb: { enabled: true, value: '0.0' }, faq: { enabled: true, value: '0' }, adas13: { enabled: true, value: '9' }, gds: { enabled: true, value: '1' } })
+      if (type === 'ad') nextFeats = { mmse: { enabled: true, value: '18' }, moca: { enabled: true, value: '16' }, cdrsb: { enabled: true, value: '4.5' }, faq: { enabled: true, value: '12' }, adas13: { enabled: true, value: '38' }, gds: { enabled: true, value: '4' } }
+      else if (type === 'mci') nextFeats = { mmse: { enabled: true, value: '24' }, moca: { enabled: true, value: '21' }, cdrsb: { enabled: true, value: '1.5' }, faq: { enabled: true, value: '5' }, adas13: { enabled: true, value: '24' }, gds: { enabled: true, value: '2' } }
+      else nextFeats = { mmse: { enabled: true, value: '29' }, moca: { enabled: true, value: '28' }, cdrsb: { enabled: true, value: '0.0' }, faq: { enabled: true, value: '0' }, adas13: { enabled: true, value: '9' }, gds: { enabled: true, value: '1' } }
     } else if (stageNum === 2) {
-      if (type === 'ad') setFeats({ plasma_ptau217: { enabled: true, value: '0.42' }, plasma_ab42_40: { enabled: true, value: '0.065' }, plasma_nfl: { enabled: true, value: '24.8' }, plasma_gfap: { enabled: true, value: '310.0' } })
-      else if (type === 'mci') setFeats({ plasma_ptau217: { enabled: true, value: '0.24' }, plasma_ab42_40: { enabled: true, value: '0.082' }, plasma_nfl: { enabled: true, value: '15.4' }, plasma_gfap: { enabled: true, value: '195.0' } })
-      else setFeats({ plasma_ptau217: { enabled: true, value: '0.08' }, plasma_ab42_40: { enabled: true, value: '0.115' }, plasma_nfl: { enabled: true, value: '9.2' }, plasma_gfap: { enabled: true, value: '88.0' } })
+      if (type === 'ad') nextFeats = { plasma_ptau217: { enabled: true, value: '0.42' }, plasma_ab42_40: { enabled: true, value: '0.065' }, plasma_nfl: { enabled: true, value: '24.8' }, plasma_gfap: { enabled: true, value: '310.0' } }
+      else if (type === 'mci') nextFeats = { plasma_ptau217: { enabled: true, value: '0.24' }, plasma_ab42_40: { enabled: true, value: '0.082' }, plasma_nfl: { enabled: true, value: '15.4' }, plasma_gfap: { enabled: true, value: '195.0' } }
+      else nextFeats = { plasma_ptau217: { enabled: true, value: '0.08' }, plasma_ab42_40: { enabled: true, value: '0.115' }, plasma_nfl: { enabled: true, value: '9.2' }, plasma_gfap: { enabled: true, value: '88.0' } }
     } else if (stageNum === 3) {
-      if (type === 'ad') setFeats({ hippocampus_cm3: { enabled: true, value: '2.85' }, ventricles_cm3: { enabled: true, value: '56.4' }, hippocampus_icv_ratio: { enabled: true, value: '0.0019' }, wmh_volume_cm3: { enabled: true, value: '4.8' } })
-      else if (type === 'mci') setFeats({ hippocampus_cm3: { enabled: true, value: '3.45' }, ventricles_cm3: { enabled: true, value: '44.0' }, hippocampus_icv_ratio: { enabled: true, value: '0.0024' }, wmh_volume_cm3: { enabled: true, value: '2.5' } })
-      else setFeats({ hippocampus_cm3: { enabled: true, value: '4.20' }, ventricles_cm3: { enabled: true, value: '28.0' }, hippocampus_icv_ratio: { enabled: true, value: '0.0031' }, wmh_volume_cm3: { enabled: true, value: '0.8' } })
+      if (type === 'ad') nextFeats = { hippocampus_cm3: { enabled: true, value: '2.85' }, ventricles_cm3: { enabled: true, value: '56.4' }, hippocampus_icv_ratio: { enabled: true, value: '0.0019' }, wmh_volume_cm3: { enabled: true, value: '4.8' } }
+      else if (type === 'mci') nextFeats = { hippocampus_cm3: { enabled: true, value: '3.45' }, ventricles_cm3: { enabled: true, value: '44.0' }, hippocampus_icv_ratio: { enabled: true, value: '0.0024' }, wmh_volume_cm3: { enabled: true, value: '2.5' } }
+      else nextFeats = { hippocampus_cm3: { enabled: true, value: '4.20' }, ventricles_cm3: { enabled: true, value: '28.0' }, hippocampus_icv_ratio: { enabled: true, value: '0.0031' }, wmh_volume_cm3: { enabled: true, value: '0.8' } }
     } else if (stageNum === 4) {
-      if (type === 'ad') setFeats({ centiloids: { enabled: true, value: '96.5' }, tau_suvr: { enabled: true, value: '1.82' }, microbleeds: { enabled: true, value: '1' } })
-      else if (type === 'mci') setFeats({ centiloids: { enabled: true, value: '62.0' }, tau_suvr: { enabled: true, value: '1.42' }, microbleeds: { enabled: true, value: '0' } })
-      else setFeats({ centiloids: { enabled: true, value: '8.0' }, tau_suvr: { enabled: true, value: '1.05' }, microbleeds: { enabled: true, value: '0' } })
+      if (type === 'ad') nextFeats = { centiloids: { enabled: true, value: '96.5' }, tau_suvr: { enabled: true, value: '1.82' }, microbleeds: { enabled: true, value: '1' } }
+      else if (type === 'mci') nextFeats = { centiloids: { enabled: true, value: '62.0' }, tau_suvr: { enabled: true, value: '1.42' }, microbleeds: { enabled: true, value: '0' } }
+      else nextFeats = { centiloids: { enabled: true, value: '8.0' }, tau_suvr: { enabled: true, value: '1.05' }, microbleeds: { enabled: true, value: '0' } }
     }
+    setFeats(nextFeats)
+    runInference(false, nextFeats)
   }
 
-  const runInference = async (closeModal = true) => {
+  const runInference = async (closeModal = true, customFeats?: Record<string, { enabled: boolean; value: string }>) => {
     setIsInferring(true)
     try {
-      const f = feats
+      const f = customFeats || feats
       const getNum = (k: string) => f[k]?.enabled && f[k]?.value ? parseFloat(f[k].value) : undefined
 
       const body: any = {
         patient_id: p.mrn || p.id,
         stage: stageNum,
         cognitive: {
-          mmse: getNum('mmse') ?? null,
-          moca: getNum('moca') ?? null,
-          cdrsb: getNum('cdrsb') ?? null,
-          faq: getNum('faq') ?? null,
-          adas13: getNum('adas13') ?? null,
-          gds: getNum('gds') ?? null,
+          mmse: getNum('mmse') ?? p.stage1?.mmse ?? 24,
+          moca: getNum('moca') ?? p.stage1?.moca ?? 22,
+          cdrsb: getNum('cdrsb') ?? p.stage1?.cdrsb ?? 1.5,
+          faq: getNum('faq') ?? p.stage1?.faq ?? 4.0,
+          adas13: getNum('adas13') ?? p.stage1?.adas13 ?? 24.0,
+          gds: getNum('gds') ?? p.stage1?.gds ?? 2.0,
           age: p.age || 72,
           gender: p.gender || 'Female',
           education_years: p.education_years || 14,
@@ -2631,17 +2635,17 @@ function StageView({ patient, stageNum, onBack, apiBase, onRefresh }: { patient:
           has_hypertension: medHist.hypertension ?? false,
         },
         apoe4_count: apoeCount,
-        plasma_ptau217: getNum('plasma_ptau217') ?? null,
-        plasma_ab42_40: getNum('plasma_ab42_40') ?? null,
-        plasma_nfl: getNum('plasma_nfl') ?? null,
-        plasma_gfap: getNum('plasma_gfap') ?? null,
-        hippocampus_icv_ratio: getNum('hippocampus_icv_ratio') ?? null,
-        hippocampus_cm3: getNum('hippocampus_cm3') ?? null,
-        ventricles_cm3: getNum('ventricles_cm3') ?? null,
-        wmh_volume_cm3: getNum('wmh_volume_cm3') ?? null,
-        centiloids: getNum('centiloids') ?? null,
-        tau_suvr: getNum('tau_suvr') ?? null,
-        microbleeds: getNum('microbleeds') != null ? Math.round(getNum('microbleeds')!) : null,
+        plasma_ptau217: getNum('plasma_ptau217') ?? p.stage2?.plasma_ptau217 ?? p.stage2?.ptau217 ?? (stageNum >= 2 ? 0.24 : null),
+        plasma_ab42_40: getNum('plasma_ab42_40') ?? p.stage2?.plasma_ab42_40 ?? p.stage2?.ab42_40 ?? (stageNum >= 2 ? 0.082 : null),
+        plasma_nfl: getNum('plasma_nfl') ?? p.stage2?.plasma_nfl ?? p.stage2?.nfl ?? (stageNum >= 2 ? 15.4 : null),
+        plasma_gfap: getNum('plasma_gfap') ?? p.stage2?.plasma_gfap ?? p.stage2?.gfap ?? (stageNum >= 2 ? 195.0 : null),
+        hippocampus_icv_ratio: getNum('hippocampus_icv_ratio') ?? p.stage3?.hippocampus_icv_ratio ?? (stageNum >= 3 ? 0.0024 : null),
+        hippocampus_cm3: getNum('hippocampus_cm3') ?? p.stage3?.hippocampus_cm3 ?? p.stage3?.hippoVol ?? (stageNum >= 3 ? 3.45 : null),
+        ventricles_cm3: getNum('ventricles_cm3') ?? p.stage3?.ventricles_cm3 ?? (stageNum >= 3 ? 44.0 : null),
+        wmh_volume_cm3: getNum('wmh_volume_cm3') ?? p.stage3?.wmh_volume_cm3 ?? (stageNum >= 3 ? 2.5 : null),
+        centiloids: getNum('centiloids') ?? p.stage4?.centiloids ?? (stageNum >= 4 ? 78.4 : null),
+        tau_suvr: getNum('tau_suvr') ?? p.stage4?.tau_suvr ?? p.stage4?.suvr ?? (stageNum >= 4 ? 1.48 : null),
+        microbleeds: getNum('microbleeds') != null ? Math.round(getNum('microbleeds')!) : (p.stage4?.microbleeds ?? (stageNum >= 4 ? 0 : null)),
         apply_india_calibration: true,
         save_to_patient: false,
       }
@@ -2660,6 +2664,8 @@ function StageView({ patient, stageNum, onBack, apiBase, onRefresh }: { patient:
       setIsInferring(false)
     }
   }
+
+
 
   // Auto-run inference on initial mount so Bento risk metrics are calculated immediately
   useEffect(() => {
