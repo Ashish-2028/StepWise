@@ -350,8 +350,9 @@ def _build_patient_dict(r, cursor):
             except: pass
         return None
 
-    # Stage 1: try rich JSON first, then latest visit
+    # Stage 1: try rich JSON first, then latest stage 1 visit
     s1_json = get_stage_json(1)
+    s1v = next((x for x in reversed(all_visits) if x.get("stage_number") == 1), None)
     if s1_json:
         p_dict["stage1"] = {
             "mmse": s1_json.get("mmse"),
@@ -364,20 +365,20 @@ def _build_patient_dict(r, cursor):
             "riskScorePct": s1_json.get("riskScorePct") or int(p_dict["risk_score"] * 100),
             "assessment": s1_json.get("assessment") or {}
         }
-    elif all_visits:
-        v = all_visits[-1]
+    elif s1v:
         p_dict["stage1"] = {
-            "mmse": v.get("mmse"), "moca": v.get("moca"),
-            "cdrsb": v.get("cdrsb"), "faq": v.get("faq"),
-            "adas13": v.get("adas13"), "gds": v.get("gds"),
-            "riskScorePct": int(p_dict["risk_score"] * 100),
-            "assessment": json.loads(v.get("stage_assessment_json") or "{}") if v.get("stage_number") == 1 else {}
+            "mmse": s1v.get("mmse"), "moca": s1v.get("moca"),
+            "cdrsb": s1v.get("cdrsb"), "faq": s1v.get("faq"),
+            "adas13": s1v.get("adas13"), "gds": s1v.get("gds"),
+            "riskScorePct": int((s1v.get("risk_score") or p_dict["risk_score"]) * 100),
+            "assessment": json.loads(s1v.get("stage_assessment_json") or "{}")
         }
     else:
         p_dict["stage1"] = None
 
     # Stage 2
     s2_json = get_stage_json(2)
+    s2v = next((x for x in reversed(all_visits) if x.get("stage_number") == 2), None)
     if cs >= 2:
         if s2_json:
             p_dict["stage2"] = {
@@ -388,18 +389,21 @@ def _build_patient_dict(r, cursor):
                 "riskScorePct": s2_json.get("riskScorePct") or int(p_dict["risk_score"] * 100),
                 "assessment": s2_json.get("assessment") or {}
             }
-        else:
-            s2v = next((x for x in reversed(all_visits) if x.get("stage_number") == 2 and x.get("ptau217")), (all_visits[-1] if all_visits else {}))
+        elif s2v:
             p_dict["stage2"] = {
                 "plasma_ptau217": s2v.get("ptau217"), "plasma_ab42_40": s2v.get("ab42_40"),
                 "plasma_nfl": s2v.get("nfl"), "plasma_gfap": s2v.get("gfap"),
-                "riskScorePct": int(p_dict["risk_score"] * 100), "assessment": {}
+                "riskScorePct": int((s2v.get("risk_score") or p_dict["risk_score"]) * 100),
+                "assessment": json.loads(s2v.get("stage_assessment_json") or "{}")
             }
+        else:
+            p_dict["stage2"] = None
     else:
         p_dict["stage2"] = None
 
     # Stage 3
     s3_json = get_stage_json(3)
+    s3v = next((x for x in reversed(all_visits) if x.get("stage_number") == 3), None)
     if cs >= 3:
         if s3_json:
             p_dict["stage3"] = {
@@ -410,17 +414,20 @@ def _build_patient_dict(r, cursor):
                 "riskScorePct": s3_json.get("riskScorePct") or int(p_dict["risk_score"] * 100),
                 "assessment": s3_json.get("assessment") or {}
             }
-        else:
-            s3v = next((x for x in reversed(all_visits) if x.get("stage_number") == 3 and x.get("hippocampus_cm3")), (all_visits[-1] if all_visits else {}))
+        elif s3v:
             p_dict["stage3"] = {
                 "hippoVol": s3v.get("hippocampus_cm3"), "ventriclesVol": s3v.get("ventricles_cm3"),
-                "mtaGrade": s3v.get("mta_grade"), "riskScorePct": int(p_dict["risk_score"] * 100), "assessment": {}
+                "mtaGrade": s3v.get("mta_grade"), "riskScorePct": int((s3v.get("risk_score") or p_dict["risk_score"]) * 100),
+                "assessment": json.loads(s3v.get("stage_assessment_json") or "{}")
             }
+        else:
+            p_dict["stage3"] = None
     else:
         p_dict["stage3"] = None
 
     # Stage 4
     s4_json = get_stage_json(4)
+    s4v = next((x for x in reversed(all_visits) if x.get("stage_number") == 4), None)
     if cs >= 4:
         if s4_json:
             p_dict["stage4"] = {
@@ -433,15 +440,17 @@ def _build_patient_dict(r, cursor):
                 "riskScorePct": s4_json.get("riskScorePct") or int(p_dict["risk_score"] * 100),
                 "assessment": s4_json.get("assessment") or {}
             }
-        else:
-            s4v = next((x for x in reversed(all_visits) if x.get("stage_number") == 4 and x.get("centiloids")), (all_visits[-1] if all_visits else {}))
+        elif s4v:
             p_dict["stage4"] = {
                 "centiloids": s4v.get("centiloids"), "suvr": s4v.get("tau_suvr"),
                 "tauSuvr": s4v.get("tau_suvr"), "microbleedsCount": s4v.get("microbleeds", 0),
                 "atnClassification": "A+ T+ N+",
                 "dmtEligible": (s4v.get("centiloids") or 0) >= 25.0,
-                "riskScorePct": int(p_dict["risk_score"] * 100), "assessment": {}
+                "riskScorePct": int((s4v.get("risk_score") or p_dict["risk_score"]) * 100),
+                "assessment": json.loads(s4v.get("stage_assessment_json") or "{}")
             }
+        else:
+            p_dict["stage4"] = None
     else:
         p_dict["stage4"] = None
 

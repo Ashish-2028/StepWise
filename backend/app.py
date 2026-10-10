@@ -542,6 +542,47 @@ def predict_triage(req: DynamicTriageRequest):
         feat_dict["MoCA_Delayed_Recall"] = min(5.0, float(moca_val) * 0.15)
         feat_dict["MoCA_Orientation"] = min(6.0, float(moca_val) * 0.20)
 
+    if cdrsb_val is not None:
+        cdr_f = float(cdrsb_val)
+        feat_dict["CDRSB"] = cdr_f
+        feat_dict["CDGLOBAL"] = 3.0 if cdr_f >= 9.0 else (2.0 if cdr_f >= 4.0 else (1.0 if cdr_f >= 2.0 else (0.5 if cdr_f >= 0.5 else 0.0)))
+        feat_dict["CDMEMORY"] = min(3.0, cdr_f * 0.25)
+        feat_dict["CDORIENT"] = min(3.0, cdr_f * 0.20)
+        feat_dict["CDJUDGE"] = min(3.0, cdr_f * 0.20)
+        feat_dict["CDCOMMUN"] = min(3.0, cdr_f * 0.15)
+        feat_dict["CDHOME"] = min(3.0, cdr_f * 0.10)
+        feat_dict["CDCARE"] = min(3.0, cdr_f * 0.10)
+
+    if faq_val is not None:
+        faq_f = float(faq_val)
+        feat_dict["FAQTOTAL"] = faq_f
+        feat_dict["FAQFORM"] = min(3.0, faq_f * 0.15)
+        feat_dict["FAQFINAN"] = min(3.0, faq_f * 0.15)
+        feat_dict["FAQSHOP"] = min(3.0, faq_f * 0.12)
+        feat_dict["FAQGAME"] = min(3.0, faq_f * 0.08)
+        feat_dict["FAQBEVG"] = min(3.0, faq_f * 0.08)
+        feat_dict["FAQMEAL"] = min(3.0, faq_f * 0.10)
+        feat_dict["FAQEVENT"] = min(3.0, faq_f * 0.12)
+        feat_dict["FAQTV"] = min(3.0, faq_f * 0.08)
+        feat_dict["FAQREM"] = min(3.0, faq_f * 0.12)
+        feat_dict["FAQTRAVL"] = min(3.0, faq_f * 0.10)
+
+    feat_dict["NPIQ_Total_Severity"] = min(12.0, float(gds_val) * 1.5) if gds_val is not None else 0.0
+    feat_dict["NPID"] = 1.0 if (gds_val and float(gds_val) >= 3.0) else 0.0
+    feat_dict["NPIE"] = 1.0 if (gds_val and float(gds_val) >= 4.0) else 0.0
+    feat_dict["NPIC"] = 0.0
+    feat_dict["VSBPSYS"] = 140.0
+    feat_dict["VSBPDIA"] = 85.0
+    feat_dict["Pulse_Pressure"] = 55.0
+    feat_dict["VSPULSE"] = 72.0
+    feat_dict["BMI"] = 26.5
+    feat_dict["MHPSYCH"] = 1.0 if (gds_val and float(gds_val) >= 4.0) else 0.0
+    feat_dict["MH2NEURL"] = 0.0
+    feat_dict["MH4CARD"] = 1.0 if (p_db and p_db.get("medical_history", {}).get("hypertension")) else 0.0
+    feat_dict["MH9ENDO"] = 1.0 if (p_db and p_db.get("medical_history", {}).get("diabetes")) else 0.0
+    feat_dict["MH14ALCH"] = 0.0
+    feat_dict["AD_Medical_Risk_Score"] = 2.0
+
     # Genetic APOE
     apoe_val = req.apoe4_count
     if apoe_val is None and p_db and p_db.get("apoe"):
@@ -567,7 +608,7 @@ def predict_triage(req: DynamicTriageRequest):
         feat_dict["lilly_ptau217_z"] = ptau_z
         feat_dict["blennow_PLASMATAU_z"] = ptau_z
         feat_dict["roche_PTAU_z"] = ptau_z
-        feat_dict["roche_TAU_z"] = ptau_z
+        feat_dict["roche_TAU_z"] = ptau_z * 0.8
         feat_dict["c2n_is_amyloid_pos"] = 1.0 if ptau_f >= 0.20 else 0.0
         feat_dict["upenn_is_amyloid_pos"] = 1.0 if ptau_f >= 0.20 else 0.0
 
@@ -580,8 +621,13 @@ def predict_triage(req: DynamicTriageRequest):
         feat_dict["upenn_AB42_AB40_F_z"] = ab_z
         feat_dict["upenn_AB42_F_z"] = -ab_z * 0.8
         feat_dict["upenn_AB40_F_z"] = ab_z * 0.5
+        feat_dict["roche_ABETA42_z"] = -ab_z * 0.8
+        feat_dict["roche_ABETA40_z"] = ab_z * 0.5
         feat_dict["composite_abeta_ratio_z"] = ab_z
         feat_dict["c2n_APS2_C2N_z"] = ab_z * 1.2
+
+    if ptau_val is not None and ab42_40_val is not None:
+        feat_dict["upenn_pT217_AB42_F_z"] = (feat_dict["c2n_pT217_C2N_z"] + feat_dict["c2n_AB42_AB40_C2N_z"]) / 2.0
 
     if gfap_val is not None:
         gfap_f = float(gfap_val)
@@ -607,6 +653,7 @@ def predict_triage(req: DynamicTriageRequest):
         feat_dict["hippocampus_icv_ratio"] = float(hippo_icv) if hippo_icv is not None else (h_f / 1500.0)
         feat_dict["entorhinal_avg_vol"] = h_f * 380.0
         feat_dict["midtemp_avg_vol"] = h_f * 4500.0
+        feat_dict["wholebrain_icv_ratio"] = 0.70
 
     if vent_cm3 is not None:
         v_f = float(vent_cm3)
@@ -658,12 +705,40 @@ def predict_triage(req: DynamicTriageRequest):
     model = MODELS[stage]
     raw_prob = float(model.predict_proba(X_eval)[:, 1][0])
     
-    # 1. Multi-Modal Disease Severity Index (0.0 to 1.0)
+    # 1. Multi-Modal Disease Severity Index with Biomarker Modality Fusion
     severity_index = float(raw_prob)
+    if stage == 2 and ptau_val is not None:
+        ptau_f = float(ptau_val)
+        ab_f = float(ab42_40_val if ab42_40_val is not None else 0.089)
+        gfap_f = float(gfap_val if gfap_val is not None else 180.0)
+        nfl_f = float(nfl_val if nfl_val is not None else 14.0)
+        ptau_z = (ptau_f - 0.15) / 0.08
+        ab_z = (0.095 - ab_f) / 0.02
+        gfap_z = (gfap_f - 120.0) / 60.0
+        nfl_z = (nfl_f - 12.0) / 5.0
+        apoe_bonus = 0.25 * float(feat_dict.get("APOE4_Count", 0.0))
+        bio_score = 0.40 * ptau_z + 0.30 * ab_z + 0.15 * gfap_z + 0.15 * nfl_z + apoe_bonus
+        bio_plasma_prob = float(1.0 / (1.0 + np.exp(-0.85 * bio_score)))
+        severity_index = float(0.40 * raw_prob + 0.60 * bio_plasma_prob)
+    elif stage == 3 and hippo_cm3 is not None:
+        h_f = float(hippo_cm3)
+        v_f = float(vent_cm3 if vent_cm3 is not None else 40.0)
+        w_f = float(wmh_cm3 if wmh_cm3 is not None else 2.0)
+        mri_score = 0.55 * ((3.8 - h_f) / 0.6) + 0.30 * ((v_f - 35.0) / 15.0) + 0.15 * ((w_f - 2.0) / 2.0)
+        bio_mri_prob = float(1.0 / (1.0 + np.exp(-1.1 * mri_score)))
+        severity_index = float(0.40 * raw_prob + 0.60 * bio_mri_prob)
+    elif stage == 4 and cent_val is not None:
+        c_f = float(cent_val)
+        t_f = float(tau_suvr if tau_suvr is not None else 1.25)
+        pet_score = 0.60 * ((c_f - 25.0) / 35.0) + 0.40 * ((t_f - 1.25) / 0.25)
+        bio_pet_prob = float(1.0 / (1.0 + np.exp(-1.2 * pet_score)))
+        severity_index = float(0.40 * raw_prob + 0.60 * bio_pet_prob)
+
+    severity_index = max(0.02, min(0.98, severity_index))
     
     # 2. Smooth Platt Scaling for 24-Month Epidemiological Progression Risk
     eps = 1e-6
-    raw_clamped = max(eps, min(1.0 - eps, raw_prob))
+    raw_clamped = max(eps, min(1.0 - eps, severity_index))
     logit = float(np.log(raw_clamped / (1.0 - raw_clamped)))
     
     # Platt scaling calibrated parameters per stage
