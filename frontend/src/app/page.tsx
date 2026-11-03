@@ -9,7 +9,7 @@ import {
   Lock, ChevronRight, ChevronDown, ChevronUp, BarChart2, Globe,
   ClipboardList, Printer, Copy, Info, SlidersHorizontal, UploadCloud,
   ShieldAlert, Sparkles, Eye, ArrowLeft, CheckCheck, Clock, UserPlus,
-  TrendingDown, Layers, RefreshCw, Settings, MoreVertical
+  TrendingDown, Layers, RefreshCw, Settings, MoreVertical, Mic, MicOff, Database, History
 } from 'lucide-react'
 
 import ScanDualViewer from './components/ScanDualViewer'
@@ -1566,24 +1566,13 @@ function PatientDossierView({
   // Longitudinal visits extracted from timeline / visits
   const longitudinalVisits = useMemo(() => {
     const visits = (timeline || []).filter((e: any) => e.type === 'visit')
-    if (visits.length > 0) return visits
-    return [
-      { visit_code: 'M00', timestamp: '2024-09-12', risk_score: Math.max(0.15, +(score - 0.22).toFixed(2)) },
-      { visit_code: 'M12', timestamp: '2025-09-14', risk_score: Math.max(0.25, +(score - 0.10).toFixed(2)) },
-      { visit_code: 'M24', timestamp: '2026-09-15', risk_score: score }
-    ]
-  }, [timeline, score])
+    return visits
+  }, [timeline])
 
   // Multi-visit data for difference / delta table
   const multiVisitRows = useMemo(() => {
     const vList = patient.visits || []
-    if (vList.length === 0) {
-      return [
-        { code: 'M00', date: '2024-09-12', mmse: 27, moca: 26, ptau: 0.12, hippo: 3.95, cent: 15, risk: 0.25, notes: 'Baseline cognitive assessment' },
-        { code: 'M12', date: '2025-09-14', mmse: 25, moca: 24, ptau: 0.18, hippo: 3.65, cent: 42, risk: 0.48, notes: 'Mild memory complaints reported' },
-        { code: 'M24', date: '2026-09-15', mmse: patient.stage1?.mmse || 23, moca: patient.stage1?.moca || 21, ptau: patient.stage2?.ptau217 || 0.28, hippo: patient.stage3?.hippoVol || 3.15, cent: patient.stage4?.centiloids || 78, risk: score, notes: 'High progression risk verified' },
-      ]
-    }
+    if (vList.length === 0) return []
     return vList.map((v: any, idx: number) => ({
       id: v.id,
       code: v.visit_code || `M${idx * 12}`,
@@ -1596,13 +1585,28 @@ function PatientDossierView({
       risk: v.risk_score,
       notes: v.doctor_notes || v.stage_dx || 'Clinical assessment'
     }))
-  }, [patient, score])
+  }, [patient])
 
   const handleDeleteTimelineVisit = async (visitId: number) => {
     if (!confirm('Are you sure you want to delete this stage assessment from the patient record? All metrics and progression curves will safely roll back.')) return
     setDeletingVisitId(visitId)
     try {
       await fetch(`${apiBase}/api/patients/${patient.id || patient.mrn}/visits/${visitId}`, {
+        method: 'DELETE'
+      })
+      await onRefresh()
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setDeletingVisitId(null)
+    }
+  }
+
+  const handleDeleteTimelineEscalation = async (escalationId: number) => {
+    if (!confirm('Are you sure you want to delete this escalation decision? The patient stage state will safely roll back.')) return
+    setDeletingVisitId(escalationId)
+    try {
+      await fetch(`${apiBase}/api/patients/${patient.id || patient.mrn}/escalations/${escalationId}`, {
         method: 'DELETE'
       })
       await onRefresh()
@@ -1870,139 +1874,163 @@ function PatientDossierView({
 
             {/* TAB 1: Trend Chart */}
             {activeTab === 'Trend' && (
-              <div>
-                <div className="h-[220px] w-full relative flex flex-col justify-between pt-2 pb-1">
-                  <svg className="w-full h-[160px] overflow-visible" viewBox="0 0 400 130" preserveAspectRatio="none">
-                    <line x1="0" y1="10" x2="400" y2="10" stroke="#F8FAFC" strokeDasharray="4 4" strokeWidth="1" />
-                    <line x1="0" y1="45" x2="400" y2="45" stroke="#F8FAFC" strokeDasharray="4 4" strokeWidth="1" />
-                    <line x1="0" y1="80" x2="400" y2="80" stroke="#F8FAFC" strokeDasharray="4 4" strokeWidth="1" />
-                    <line x1="0" y1="115" x2="400" y2="115" stroke="#E2E8F0" strokeWidth="1" />
+              longitudinalVisits.length === 0 ? (
+                <div className="text-center py-10 bg-gray-50/60 rounded-2xl border border-dashed border-gray-200 p-6 space-y-2">
+                  <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-1">
+                    <Activity size={20} />
+                  </div>
+                  <h4 className="text-xs font-black text-gray-800">No Longitudinal Visits Recorded Yet</h4>
+                  <p className="text-[11px] text-gray-500 max-w-md mx-auto">
+                    Complete Stage 1 Cognitive Screening to record the baseline visit (M00) and initialize longitudinal trajectory modeling.
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  <div className="h-[220px] w-full relative flex flex-col justify-between pt-2 pb-1">
+                    <svg className="w-full h-[160px] overflow-visible" viewBox="0 0 400 130" preserveAspectRatio="none">
+                      <line x1="0" y1="10" x2="400" y2="10" stroke="#F8FAFC" strokeDasharray="4 4" strokeWidth="1" />
+                      <line x1="0" y1="45" x2="400" y2="45" stroke="#F8FAFC" strokeDasharray="4 4" strokeWidth="1" />
+                      <line x1="0" y1="80" x2="400" y2="80" stroke="#F8FAFC" strokeDasharray="4 4" strokeWidth="1" />
+                      <line x1="0" y1="115" x2="400" y2="115" stroke="#E2E8F0" strokeWidth="1" />
 
-                    {(() => {
-                      const pts = longitudinalVisits.map((v: any, i: number) => {
-                        const x = longitudinalVisits.length > 1 ? 30 + (i / (longitudinalVisits.length - 1)) * 340 : 200
-                        const y = 115 - Math.min(100, Math.max(10, ((v.risk_score || 0.5) * 95)))
-                        return { x, y, score: v.risk_score, code: v.visit_code || `M${i*12}`, date: v.timestamp }
-                      })
+                      {(() => {
+                        const pts = longitudinalVisits.map((v: any, i: number) => {
+                          const x = longitudinalVisits.length > 1 ? 30 + (i / (longitudinalVisits.length - 1)) * 340 : 200
+                          const y = 115 - Math.min(100, Math.max(10, ((v.risk_score || 0.5) * 95)))
+                          return { x, y, score: v.risk_score, code: v.visit_code || `M${i*12}`, date: v.timestamp }
+                        })
 
-                      let curveStr = `M ${pts[0].x},${pts[0].y}`
-                      for (let i = 0; i < pts.length - 1; i++) {
-                        const p0 = pts[i]
-                        const p1 = pts[i + 1]
-                        const cpX1 = p0.x + (p1.x - p0.x) / 2
-                        const cpY1 = p0.y
-                        const cpX2 = p0.x + (p1.x - p0.x) / 2
-                        const cpY2 = p1.y
-                        curveStr += ` C ${cpX1},${cpY1} ${cpX2},${cpY2} ${p1.x},${p1.y}`
-                      }
-                      const areaStr = `${curveStr} L ${pts[pts.length - 1].x},115 L ${pts[0].x},115 Z`
+                        let curveStr = `M ${pts[0].x},${pts[0].y}`
+                        for (let i = 0; i < pts.length - 1; i++) {
+                          const p0 = pts[i]
+                          const p1 = pts[i + 1]
+                          const cpX1 = p0.x + (p1.x - p0.x) / 2
+                          const cpY1 = p0.y
+                          const cpX2 = p0.x + (p1.x - p0.x) / 2
+                          const cpY2 = p1.y
+                          curveStr += ` C ${cpX1},${cpY1} ${cpX2},${cpY2} ${p1.x},${p1.y}`
+                        }
+                        const areaStr = `${curveStr} L ${pts[pts.length - 1].x},115 L ${pts[0].x},115 Z`
 
-                      return (
-                        <g>
-                          <defs>
-                            <linearGradient id="dossierTrendGrad" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor="#1A56DB" stopOpacity="0.22" />
-                              <stop offset="100%" stopColor="#1A56DB" stopOpacity="0.0" />
-                            </linearGradient>
-                          </defs>
-                          <path d={areaStr} fill="url(#dossierTrendGrad)" />
-                          <path d={curveStr} fill="none" stroke="#1A56DB" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
+                        return (
+                          <g>
+                            <defs>
+                              <linearGradient id="dossierTrendGrad" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#1A56DB" stopOpacity="0.22" />
+                                <stop offset="100%" stopColor="#1A56DB" stopOpacity="0.0" />
+                              </linearGradient>
+                            </defs>
+                            <path d={areaStr} fill="url(#dossierTrendGrad)" />
+                            <path d={curveStr} fill="none" stroke="#1A56DB" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
 
-                          {pts.map((p: any, idx: number) => {
-                            const pScorePct = Math.round((p.score || 0) * 100)
-                            const badgeBg = pScorePct >= 70 ? '#EF4444' : pScorePct >= 40 ? '#F59E0B' : '#10B981'
-                            return (
-                              <g key={idx} className="cursor-pointer">
-                                <circle cx={p.x} cy={p.y} r="5.5" fill="#1A56DB" stroke="#ffffff" strokeWidth="2.5" className="shadow-md" />
-                                <rect x={p.x - 18} y={p.y - 24} width="36" height="16" rx="4" fill={badgeBg} />
-                                <text x={p.x} y={p.y - 12} textAnchor="middle" fill="#ffffff" fontSize="9" fontWeight="bold">
-                                  {pScorePct}%
-                                </text>
-                              </g>
-                            )
-                          })}
-                        </g>
-                      )
-                    })()}
-                  </svg>
+                            {pts.map((p: any, idx: number) => {
+                              const pScorePct = Math.round((p.score || 0) * 100)
+                              const badgeBg = pScorePct >= 70 ? '#EF4444' : pScorePct >= 40 ? '#F59E0B' : '#10B981'
+                              return (
+                                <g key={idx} className="cursor-pointer">
+                                  <circle cx={p.x} cy={p.y} r="5.5" fill="#1A56DB" stroke="#ffffff" strokeWidth="2.5" className="shadow-md" />
+                                  <rect x={p.x - 18} y={p.y - 24} width="36" height="16" rx="4" fill={badgeBg} />
+                                  <text x={p.x} y={p.y - 12} textAnchor="middle" fill="#ffffff" fontSize="9" fontWeight="bold">
+                                    {pScorePct}%
+                                  </text>
+                                </g>
+                              )
+                            })}
+                          </g>
+                        )
+                      })()}
+                    </svg>
 
-                  <div className="flex justify-between text-[10px] text-gray-400 font-bold px-4 border-t border-gray-100 pt-1.5">
-                    {longitudinalVisits.map((v: any, i: number) => (
-                      <div key={i} className="text-center">
-                        <span className="text-gray-900 font-black">{v.visit_code || `M${i * 12}`}</span>
-                        <span className="text-[9px] text-gray-400 block font-normal">{fmtDate(v.timestamp)}</span>
-                      </div>
-                    ))}
+                    <div className="flex justify-between text-[10px] text-gray-400 font-bold px-4 border-t border-gray-100 pt-1.5">
+                      {longitudinalVisits.map((v: any, i: number) => (
+                        <div key={i} className="text-center">
+                          <span className="text-gray-900 font-black">{v.visit_code || `M${i * 12}`}</span>
+                          <span className="text-[9px] text-gray-400 block font-normal">{fmtDate(v.timestamp)}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
+              )
             )}
 
             {/* TAB 2: Multi-Visit Differences & Deltas Table */}
             {activeTab === 'Differences' && (
-              <div className="overflow-x-auto pt-1">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-gray-50 border-b border-gray-100 text-[10px] uppercase text-gray-500 font-bold">
-                    <tr>
-                      <th className="py-2.5 px-3">Visit</th>
-                      <th className="py-2.5 px-3">Date</th>
-                      <th className="py-2.5 px-3">MMSE</th>
-                      <th className="py-2.5 px-3">MoCA</th>
-                      <th className="py-2.5 px-3">p-tau217</th>
-                      <th className="py-2.5 px-3">Hippo Vol</th>
-                      <th className="py-2.5 px-3">Centiloids</th>
-                      <th className="py-2.5 px-3">Risk %</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {multiVisitRows.map((row: any, idx: number) => {
-                      const prevRow = idx > 0 ? multiVisitRows[idx - 1] : null
-                      const deltaMoca = prevRow && row.moca && prevRow.moca ? row.moca - prevRow.moca : null
-                      const deltaPtau = prevRow && row.ptau && prevRow.ptau ? +(row.ptau - prevRow.ptau).toFixed(2) : null
-                      const deltaRisk = prevRow && row.risk != null && prevRow.risk != null ? Math.round((row.risk - prevRow.risk) * 100) : null
-                      return (
-                        <tr key={idx} className="hover:bg-gray-50/50">
-                          <td className="py-3 px-3 font-black text-gray-900">{row.code}</td>
-                          <td className="py-3 px-3 text-gray-500 font-mono text-[11px]">{fmtDate(row.date)}</td>
-                          <td className="py-3 px-3 font-semibold">{row.mmse ?? '—'}</td>
-                          <td className="py-3 px-3">
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-semibold">{row.moca ?? '—'}</span>
-                              {deltaMoca != null && (
-                                <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${deltaMoca < 0 ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                                  {deltaMoca > 0 ? `+${deltaMoca}` : deltaMoca}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="py-3 px-3">
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-semibold">{row.ptau != null ? `${row.ptau} pg/mL` : '—'}</span>
-                              {deltaPtau != null && (
-                                <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${deltaPtau > 0 ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                                  {deltaPtau > 0 ? `+${deltaPtau}` : deltaPtau}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="py-3 px-3 font-semibold">{row.hippo != null ? `${row.hippo} cm³` : '—'}</td>
-                          <td className="py-3 px-3 font-semibold">{row.cent != null ? `${row.cent} CL` : '—'}</td>
-                          <td className="py-3 px-3">
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-black text-gray-900">{row.risk != null ? `${Math.round(row.risk * 100)}%` : '—'}</span>
-                              {deltaRisk != null && (
-                                <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${deltaRisk > 0 ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                                  {deltaRisk > 0 ? `+${deltaRisk}%` : `${deltaRisk}%`}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              multiVisitRows.length === 0 ? (
+                <div className="text-center py-10 bg-gray-50/60 rounded-2xl border border-dashed border-gray-200 p-6 space-y-2">
+                  <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-1">
+                    <History size={20} />
+                  </div>
+                  <h4 className="text-xs font-black text-gray-800">Multi-Visit Delta Tracking Pending</h4>
+                  <p className="text-[11px] text-gray-500 max-w-md mx-auto">
+                    Consecutive visit deltas (Δ) will appear automatically as longitudinal follow-ups and stage assessments are saved.
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto pt-1">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-gray-50 border-b border-gray-100 text-[10px] uppercase text-gray-500 font-bold">
+                      <tr>
+                        <th className="py-2.5 px-3">Visit</th>
+                        <th className="py-2.5 px-3">Date</th>
+                        <th className="py-2.5 px-3">MMSE</th>
+                        <th className="py-2.5 px-3">MoCA</th>
+                        <th className="py-2.5 px-3">p-tau217</th>
+                        <th className="py-2.5 px-3">Hippo Vol</th>
+                        <th className="py-2.5 px-3">Centiloids</th>
+                        <th className="py-2.5 px-3">Risk %</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {multiVisitRows.map((row: any, idx: number) => {
+                        const prevRow = idx > 0 ? multiVisitRows[idx - 1] : null
+                        const deltaMoca = prevRow && row.moca && prevRow.moca ? row.moca - prevRow.moca : null
+                        const deltaPtau = prevRow && row.ptau && prevRow.ptau ? +(row.ptau - prevRow.ptau).toFixed(2) : null
+                        const deltaRisk = prevRow && row.risk != null && prevRow.risk != null ? Math.round((row.risk - prevRow.risk) * 100) : null
+                        return (
+                          <tr key={idx} className="hover:bg-gray-50/50">
+                            <td className="py-3 px-3 font-black text-gray-900">{row.code}</td>
+                            <td className="py-3 px-3 text-gray-500 font-mono text-[11px]">{fmtDate(row.date)}</td>
+                            <td className="py-3 px-3 font-semibold">{row.mmse ?? '—'}</td>
+                            <td className="py-3 px-3">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-semibold">{row.moca ?? '—'}</span>
+                                {deltaMoca != null && (
+                                  <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${deltaMoca < 0 ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                                    {deltaMoca > 0 ? `+${deltaMoca}` : deltaMoca}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-3 px-3">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-semibold">{row.ptau != null ? `${row.ptau} pg/mL` : '—'}</span>
+                                {deltaPtau != null && (
+                                  <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${deltaPtau > 0 ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                                    {deltaPtau > 0 ? `+${deltaPtau}` : deltaPtau}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-3 px-3 font-semibold">{row.hippo != null ? `${row.hippo} cm³` : '—'}</td>
+                            <td className="py-3 px-3 font-semibold">{row.cent != null ? `${row.cent} CL` : '—'}</td>
+                            <td className="py-3 px-3">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-black text-gray-900">{row.risk != null ? `${Math.round(row.risk * 100)}%` : '—'}</span>
+                                {deltaRisk != null && (
+                                  <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${deltaRisk > 0 ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                                    {deltaRisk > 0 ? `+${deltaRisk}%` : `${deltaRisk}%`}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )
             )}
           </div>
 
@@ -2089,6 +2117,16 @@ function PatientDossierView({
                                 disabled={deletingVisitId === visitId}
                                 className="text-gray-400 hover:text-red-600 p-1.5 rounded-lg bg-gray-100 hover:bg-red-50 transition"
                                 title="Delete this assessment log (rolls back patient state)"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
+                            {ev.type === 'escalation' && ev.can_delete !== false && (ev.escalation_id || ev.id) && (
+                              <button
+                                onClick={() => handleDeleteTimelineEscalation(ev.escalation_id || ev.id)}
+                                disabled={deletingVisitId === (ev.escalation_id || ev.id)}
+                                className="text-gray-400 hover:text-red-600 p-1.5 rounded-lg bg-gray-100 hover:bg-red-50 transition"
+                                title="Delete this escalation decision (rolls back patient stage state)"
                               >
                                 <Trash2 size={13} />
                               </button>
@@ -2273,6 +2311,46 @@ const safeObj = (val: any) => {
   return {}
 }
 
+// Spoken numbers to digits converter for clinical dictation
+function parseSpokenNumbers(text: string): string {
+  const wordMap: Record<string, string> = {
+    'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4',
+    'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9',
+    'ten': '10', 'eleven': '11', 'twelve': '12', 'thirteen': '13', 'fourteen': '14',
+    'fifteen': '15', 'sixteen': '16', 'seventeen': '17', 'eighteen': '18', 'nineteen': '19',
+    'twenty': '20', 'twenty-one': '21', 'twenty-two': '22', 'twenty-three': '23', 'twenty-four': '24',
+    'twenty-five': '25', 'twenty-six': '26', 'twenty-seven': '27', 'twenty-eight': '28', 'twenty-nine': '29',
+    'thirty': '30', 'forty': '40', 'fifty': '50', 'sixty': '60', 'seventy': '70', 'eighty': '80', 'ninety': '90',
+    'point': '.', 'dot': '.'
+  }
+
+  let normalized = text.toLowerCase()
+    .replace(/\btwenty\s+one\b/g, '21')
+    .replace(/\btwenty\s+two\b/g, '22')
+    .replace(/\btwenty\s+three\b/g, '23')
+    .replace(/\btwenty\s+four\b/g, '24')
+    .replace(/\btwenty\s+five\b/g, '25')
+    .replace(/\btwenty\s+six\b/g, '26')
+    .replace(/\btwenty\s+seven\b/g, '27')
+    .replace(/\btwenty\s+eight\b/g, '28')
+    .replace(/\btwenty\s+nine\b/g, '29')
+    .replace(/\bthirty\s+one\b/g, '31')
+    .replace(/\bforty\s+five\b/g, '45')
+    .replace(/\bfifty\s+six\b/g, '56')
+    .replace(/\bseventy\s+eight\b/g, '78')
+    .replace(/\beighty\s+five\b/g, '85')
+    .replace(/\bninety\s+six\b/g, '96')
+
+  Object.keys(wordMap).forEach(w => {
+    const reg = new RegExp(`\\b${w}\\b`, 'gi')
+    normalized = normalized.replace(reg, wordMap[w])
+  })
+
+  // Normalize decimal numbers like "0 . 35" -> "0.35"
+  normalized = normalized.replace(/(\d+)\s*\.\s*(\d+)/g, '$1.$2')
+  return normalized
+}
+
 // ============================================================
 // STAGE VIEW (1–4) — Unified Component
 // ============================================================
@@ -2322,45 +2400,234 @@ function StageView({ patient, stageNum, onBack, apiBase, onRefresh }: { patient:
     setEscalationDecision(null)
     setDoctorNotes('')
     setSaved(false)
+    setVoiceExtracted(null)
   }, [stageNum, p.id, p.mrn, stageGroups])
 
-  // Clinical preset handlers
-  const loadPreset = (type: 'ad' | 'mci' | 'healthy') => {
-    if (stageNum === 1) {
-      if (type === 'ad') setFeats({ mmse: { enabled: true, value: '18' }, moca: { enabled: true, value: '16' }, cdrsb: { enabled: true, value: '4.5' }, faq: { enabled: true, value: '12' }, adas13: { enabled: true, value: '38' }, gds: { enabled: true, value: '4' } })
-      else if (type === 'mci') setFeats({ mmse: { enabled: true, value: '24' }, moca: { enabled: true, value: '21' }, cdrsb: { enabled: true, value: '1.5' }, faq: { enabled: true, value: '5' }, adas13: { enabled: true, value: '24' }, gds: { enabled: true, value: '2' } })
-      else setFeats({ mmse: { enabled: true, value: '29' }, moca: { enabled: true, value: '28' }, cdrsb: { enabled: true, value: '0.0' }, faq: { enabled: true, value: '0' }, adas13: { enabled: true, value: '9' }, gds: { enabled: true, value: '1' } })
-    } else if (stageNum === 2) {
-      if (type === 'ad') setFeats({ plasma_ptau217: { enabled: true, value: '0.42' }, plasma_ab42_40: { enabled: true, value: '0.065' }, plasma_nfl: { enabled: true, value: '24.8' }, plasma_gfap: { enabled: true, value: '310.0' } })
-      else if (type === 'mci') setFeats({ plasma_ptau217: { enabled: true, value: '0.24' }, plasma_ab42_40: { enabled: true, value: '0.082' }, plasma_nfl: { enabled: true, value: '15.4' }, plasma_gfap: { enabled: true, value: '195.0' } })
-      else setFeats({ plasma_ptau217: { enabled: true, value: '0.08' }, plasma_ab42_40: { enabled: true, value: '0.115' }, plasma_nfl: { enabled: true, value: '9.2' }, plasma_gfap: { enabled: true, value: '88.0' } })
-    } else if (stageNum === 3) {
-      if (type === 'ad') setFeats({ hippocampus_cm3: { enabled: true, value: '2.85' }, ventricles_cm3: { enabled: true, value: '56.4' }, hippocampus_icv_ratio: { enabled: true, value: '0.0019' }, wmh_volume_cm3: { enabled: true, value: '4.8' } })
-      else if (type === 'mci') setFeats({ hippocampus_cm3: { enabled: true, value: '3.45' }, ventricles_cm3: { enabled: true, value: '44.0' }, hippocampus_icv_ratio: { enabled: true, value: '0.0024' }, wmh_volume_cm3: { enabled: true, value: '2.5' } })
-      else setFeats({ hippocampus_cm3: { enabled: true, value: '4.20' }, ventricles_cm3: { enabled: true, value: '28.0' }, hippocampus_icv_ratio: { enabled: true, value: '0.0031' }, wmh_volume_cm3: { enabled: true, value: '0.8' } })
-    } else if (stageNum === 4) {
-      if (type === 'ad') setFeats({ centiloids: { enabled: true, value: '96.5' }, tau_suvr: { enabled: true, value: '1.82' }, microbleeds: { enabled: true, value: '1' } })
-      else if (type === 'mci') setFeats({ centiloids: { enabled: true, value: '62.0' }, tau_suvr: { enabled: true, value: '1.42' }, microbleeds: { enabled: true, value: '0' } })
-      else setFeats({ centiloids: { enabled: true, value: '8.0' }, tau_suvr: { enabled: true, value: '1.05' }, microbleeds: { enabled: true, value: '0' } })
+  const [ehrRecords, setEhrRecords] = useState<any[]>([])
+  const [isListening, setIsListening] = useState(false)
+  const [voiceNote, setVoiceNote] = useState('')
+  const [voiceExtracted, setVoiceExtracted] = useState<Record<string, string> | null>(null)
+  const [extractStatus, setExtractStatus] = useState<string | null>(null)
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null)
+
+  // Fetch EHR records on mount
+  useEffect(() => {
+    fetch(`${apiBase}/api/ehr/records`)
+      .then(res => res.json())
+      .then(data => { if (data?.records) setEhrRecords(data.records) })
+      .catch(() => {})
+  }, [apiBase])
+
+  const applyEhrRecord = (recordId: string) => {
+    const rec = ehrRecords.find(r => r.id === recordId || r.mrn === recordId)
+    if (!rec) return
+    setExtractStatus(`Imported: ${rec.patient_name} (${rec.archetype})`)
+    setTimeout(() => setExtractStatus(null), 4000)
+
+    let updated: Record<string, { enabled: boolean; value: string }> = { ...feats }
+    if (stageNum === 1 && rec.cognitive) {
+      updated = {
+        ...updated,
+        mmse: { enabled: true, value: String(rec.cognitive.mmse ?? updated.mmse?.value ?? 24) },
+        moca: { enabled: true, value: String(rec.cognitive.moca ?? updated.moca?.value ?? 22) },
+        cdrsb: { enabled: true, value: String(rec.cognitive.cdrsb ?? updated.cdrsb?.value ?? 1.5) },
+        faq: { enabled: true, value: String(rec.cognitive.faq ?? updated.faq?.value ?? 4.0) },
+        adas13: { enabled: true, value: String(rec.cognitive.adas13 ?? updated.adas13?.value ?? 24.0) },
+        gds: { enabled: true, value: String(rec.cognitive.gds ?? updated.gds?.value ?? 2.0) },
+      }
+    } else if (stageNum === 2 && rec.plasma) {
+      updated = {
+        ...updated,
+        plasma_ptau217: { enabled: true, value: String(rec.plasma.plasma_ptau217 ?? updated.plasma_ptau217?.value ?? 0.24) },
+        plasma_ab42_40: { enabled: true, value: String(rec.plasma.plasma_ab42_40 ?? updated.plasma_ab42_40?.value ?? 0.082) },
+        plasma_nfl: { enabled: true, value: String(rec.plasma.plasma_nfl ?? updated.plasma_nfl?.value ?? 15.4) },
+        plasma_gfap: { enabled: true, value: String(rec.plasma.plasma_gfap ?? updated.plasma_gfap?.value ?? 195.0) },
+      }
+    } else if (stageNum === 3 && rec.mri) {
+      updated = {
+        ...updated,
+        hippocampus_cm3: { enabled: true, value: String(rec.mri.hippocampus_cm3 ?? updated.hippocampus_cm3?.value ?? 3.45) },
+        ventricles_cm3: { enabled: true, value: String(rec.mri.ventricles_cm3 ?? updated.ventricles_cm3?.value ?? 44.0) },
+        wmh_volume_cm3: { enabled: true, value: String(rec.mri.wmh_volume_cm3 ?? updated.wmh_volume_cm3?.value ?? 2.5) },
+        hippocampus_icv_ratio: { enabled: true, value: String(rec.mri.hippocampus_icv_ratio ?? updated.hippocampus_icv_ratio?.value ?? 0.0024) },
+      }
+    } else if (stageNum === 4 && rec.pet) {
+      updated = {
+        ...updated,
+        centiloids: { enabled: true, value: String(rec.pet.centiloids ?? updated.centiloids?.value ?? 78.4) },
+        tau_suvr: { enabled: true, value: String(rec.pet.tau_suvr ?? updated.tau_suvr?.value ?? 1.48) },
+        microbleeds: { enabled: true, value: String(rec.pet.microbleeds ?? updated.microbleeds?.value ?? 0) },
+      }
+    }
+    setFeats(updated)
+    runInference(false, updated)
+  }
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setExtractStatus(`Parsing ${file.name}...`)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await fetch(`${apiBase}/api/lab/parse-report`, {
+        method: 'POST',
+        body: formData
+      })
+      const data = await res.json()
+      if (data?.parsed_report) {
+        const rep = data.parsed_report
+        setExtractStatus(`✅ Extracted from ${file.name} (${rep.raw_matches?.length || 0} biomarkers mapped)`)
+        setTimeout(() => setExtractStatus(null), 5000)
+
+        const updated = { ...feats }
+        if (rep.cognitive) {
+          if (rep.cognitive.mmse != null && updated.mmse) updated.mmse = { enabled: true, value: String(rep.cognitive.mmse) }
+          if (rep.cognitive.moca != null && updated.moca) updated.moca = { enabled: true, value: String(rep.cognitive.moca) }
+          if (rep.cognitive.cdrsb != null && updated.cdrsb) updated.cdrsb = { enabled: true, value: String(rep.cognitive.cdrsb) }
+          if (rep.cognitive.faq != null && updated.faq) updated.faq = { enabled: true, value: String(rep.cognitive.faq) }
+          if (rep.cognitive.adas13 != null && updated.adas13) updated.adas13 = { enabled: true, value: String(rep.cognitive.adas13) }
+          if (rep.cognitive.gds != null && updated.gds) updated.gds = { enabled: true, value: String(rep.cognitive.gds) }
+        }
+        if (rep.plasma) {
+          if (rep.plasma.plasma_ptau217 != null && updated.plasma_ptau217) updated.plasma_ptau217 = { enabled: true, value: String(rep.plasma.plasma_ptau217) }
+          if (rep.plasma.plasma_ab42_40 != null && updated.plasma_ab42_40) updated.plasma_ab42_40 = { enabled: true, value: String(rep.plasma.plasma_ab42_40) }
+          if (rep.plasma.plasma_nfl != null && updated.plasma_nfl) updated.plasma_nfl = { enabled: true, value: String(rep.plasma.plasma_nfl) }
+          if (rep.plasma.plasma_gfap != null && updated.plasma_gfap) updated.plasma_gfap = { enabled: true, value: String(rep.plasma.plasma_gfap) }
+        }
+        if (rep.mri) {
+          if (rep.mri.hippocampus_cm3 != null && updated.hippocampus_cm3) updated.hippocampus_cm3 = { enabled: true, value: String(rep.mri.hippocampus_cm3) }
+          if (rep.mri.ventricles_cm3 != null && updated.ventricles_cm3) updated.ventricles_cm3 = { enabled: true, value: String(rep.mri.ventricles_cm3) }
+          if (rep.mri.wmh_volume_cm3 != null && updated.wmh_volume_cm3) updated.wmh_volume_cm3 = { enabled: true, value: String(rep.mri.wmh_volume_cm3) }
+        }
+        if (rep.pet) {
+          if (rep.pet.centiloids != null && updated.centiloids) updated.centiloids = { enabled: true, value: String(rep.pet.centiloids) }
+          if (rep.pet.tau_suvr != null && updated.tau_suvr) updated.tau_suvr = { enabled: true, value: String(rep.pet.tau_suvr) }
+          if (rep.pet.microbleeds != null && updated.microbleeds) updated.microbleeds = { enabled: true, value: String(rep.pet.microbleeds) }
+        }
+        setFeats(updated)
+        runInference(false, updated)
+      }
+    } catch (err) {
+      console.error(err)
+      setExtractStatus('Failed to parse file')
+      setTimeout(() => setExtractStatus(null), 3000)
     }
   }
 
-  const runInference = async (closeModal = true) => {
+  const toggleVoiceDictation = () => {
+    if (isListening) {
+      setIsListening(false)
+      return
+    }
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (!SpeechRecognition) {
+      alert('Speech Recognition is supported natively in Chrome, Edge, and Safari.')
+      return
+    }
+    try {
+      const recognition = new SpeechRecognition()
+      recognition.continuous = false
+      recognition.interimResults = true
+      recognition.lang = 'en-US'
+
+      recognition.onstart = () => {
+        setIsListening(true)
+        setVoiceNote('Listening... Speak clinical scores (e.g. "MoCA 16, MMSE 18, ptau 0.35")')
+        setVoiceExtracted(null)
+      }
+
+      recognition.onresult = (event: any) => {
+        const rawTranscript = Array.from(event.results).map((r: any) => r[0].transcript).join(' ')
+        const transcript = parseSpokenNumbers(rawTranscript)
+        setVoiceNote(rawTranscript)
+        
+        const extracted: Record<string, string> = {}
+        const mMoCA = transcript.match(/(?:moca|mocha)\s*(?:is|score|of)?\s*(\d+(?:\.\d+)?)/i)
+        if (mMoCA) extracted['moca'] = mMoCA[1]
+        const mMMSE = transcript.match(/(?:mmse|folstein)\s*(?:is|score|of)?\s*(\d+(?:\.\d+)?)/i)
+        if (mMMSE) extracted['mmse'] = mMMSE[1]
+        const mCDR = transcript.match(/cdr(?:-|\s*)sb\s*(?:is|score|of)?\s*(\d+(?:\.\d+)?)/i)
+        if (mCDR) extracted['cdrsb'] = mCDR[1]
+        const mFAQ = transcript.match(/faq\s*(?:is|score|of)?\s*(\d+(?:\.\d+)?)/i)
+        if (mFAQ) extracted['faq'] = mFAQ[1]
+        const mADAS = transcript.match(/adas(?:-cog13)?\s*(?:is|score|of)?\s*(\d+(?:\.\d+)?)/i)
+        if (mADAS) extracted['adas13'] = mADAS[1]
+        const mPtau = transcript.match(/(?:p-?tau|tau\s*217|phospho\s*tau)\s*(?:is|of|level)?\s*(\d+(?:\.\d+)?)/i)
+        if (mPtau) extracted['plasma_ptau217'] = mPtau[1]
+        const mAb = transcript.match(/(?:ab42|a-beta|ratio)\s*(?:is|of|level)?\s*(\d+(?:\.\d+)?)/i)
+        if (mAb) extracted['plasma_ab42_40'] = mAb[1]
+        const mHippo = transcript.match(/(?:hippocampus|hippocampal)\s*(?:is|volume|of)?\s*(\d+(?:\.\d+)?)/i)
+        if (mHippo) extracted['hippocampus_cm3'] = mHippo[1]
+        const mVent = transcript.match(/(?:ventricles?|lateral)\s*(?:is|volume|of)?\s*(\d+(?:\.\d+)?)/i)
+        if (mVent) extracted['ventricles_cm3'] = mVent[1]
+        const mCent = transcript.match(/(?:centiloids?|amyloid)\s*(?:is|score|of)?\s*(\d+(?:\.\d+)?)/i)
+        if (mCent) extracted['centiloids'] = mCent[1]
+        const mTau = transcript.match(/(?:tau\s*suvr|suvr)\s*(?:is|score|of)?\s*(\d+(?:\.\d+)?)/i)
+        if (mTau) extracted['tau_suvr'] = mTau[1]
+
+        if (Object.keys(extracted).length > 0) {
+          setVoiceExtracted(extracted)
+          const updated = { ...feats }
+          for (const [k, v] of Object.entries(extracted)) {
+            if (updated[k]) updated[k] = { enabled: true, value: v }
+          }
+          setFeats(updated)
+          runInference(false, updated)
+          setExtractStatus(`🎙️ Voice parsed: ${Object.entries(extracted).map(([k, v]) => `${k}=${v}`).join(', ')}`)
+          setTimeout(() => setExtractStatus(null), 5000)
+        }
+      }
+
+      recognition.onerror = () => { setIsListening(false); setVoiceNote('') }
+      recognition.onend = () => { setIsListening(false) }
+      recognition.start()
+    } catch (e) {
+      console.error(e)
+      setIsListening(false)
+    }
+  }
+
+  // Clinical preset handlers
+  const loadPreset = (type: 'ad' | 'mci' | 'healthy') => {
+    let nextFeats: Record<string, { enabled: boolean; value: string }> = {}
+    if (stageNum === 1) {
+      if (type === 'ad') nextFeats = { mmse: { enabled: true, value: '18' }, moca: { enabled: true, value: '16' }, cdrsb: { enabled: true, value: '4.5' }, faq: { enabled: true, value: '12' }, adas13: { enabled: true, value: '38' }, gds: { enabled: true, value: '4' } }
+      else if (type === 'mci') nextFeats = { mmse: { enabled: true, value: '24' }, moca: { enabled: true, value: '21' }, cdrsb: { enabled: true, value: '1.5' }, faq: { enabled: true, value: '5' }, adas13: { enabled: true, value: '24' }, gds: { enabled: true, value: '2' } }
+      else nextFeats = { mmse: { enabled: true, value: '29' }, moca: { enabled: true, value: '28' }, cdrsb: { enabled: true, value: '0.0' }, faq: { enabled: true, value: '0' }, adas13: { enabled: true, value: '9' }, gds: { enabled: true, value: '1' } }
+    } else if (stageNum === 2) {
+      if (type === 'ad') nextFeats = { plasma_ptau217: { enabled: true, value: '0.42' }, plasma_ab42_40: { enabled: true, value: '0.065' }, plasma_nfl: { enabled: true, value: '24.8' }, plasma_gfap: { enabled: true, value: '310.0' } }
+      else if (type === 'mci') nextFeats = { plasma_ptau217: { enabled: true, value: '0.24' }, plasma_ab42_40: { enabled: true, value: '0.082' }, plasma_nfl: { enabled: true, value: '15.4' }, plasma_gfap: { enabled: true, value: '195.0' } }
+      else nextFeats = { plasma_ptau217: { enabled: true, value: '0.08' }, plasma_ab42_40: { enabled: true, value: '0.115' }, plasma_nfl: { enabled: true, value: '9.2' }, plasma_gfap: { enabled: true, value: '88.0' } }
+    } else if (stageNum === 3) {
+      if (type === 'ad') nextFeats = { hippocampus_cm3: { enabled: true, value: '2.85' }, ventricles_cm3: { enabled: true, value: '56.4' }, hippocampus_icv_ratio: { enabled: true, value: '0.0019' }, wmh_volume_cm3: { enabled: true, value: '4.8' } }
+      else if (type === 'mci') nextFeats = { hippocampus_cm3: { enabled: true, value: '3.45' }, ventricles_cm3: { enabled: true, value: '44.0' }, hippocampus_icv_ratio: { enabled: true, value: '0.0024' }, wmh_volume_cm3: { enabled: true, value: '2.5' } }
+      else nextFeats = { hippocampus_cm3: { enabled: true, value: '4.20' }, ventricles_cm3: { enabled: true, value: '28.0' }, hippocampus_icv_ratio: { enabled: true, value: '0.0031' }, wmh_volume_cm3: { enabled: true, value: '0.8' } }
+    } else if (stageNum === 4) {
+      if (type === 'ad') nextFeats = { centiloids: { enabled: true, value: '96.5' }, tau_suvr: { enabled: true, value: '1.82' }, microbleeds: { enabled: true, value: '1' } }
+      else if (type === 'mci') nextFeats = { centiloids: { enabled: true, value: '62.0' }, tau_suvr: { enabled: true, value: '1.42' }, microbleeds: { enabled: true, value: '0' } }
+      else nextFeats = { centiloids: { enabled: true, value: '8.0' }, tau_suvr: { enabled: true, value: '1.05' }, microbleeds: { enabled: true, value: '0' } }
+    }
+    setFeats(nextFeats)
+    runInference(false, nextFeats)
+  }
+
+  const runInference = async (closeModal = true, customFeats?: Record<string, { enabled: boolean; value: string }>) => {
     setIsInferring(true)
     try {
-      const f = feats
+      const f = customFeats || feats
       const getNum = (k: string) => f[k]?.enabled && f[k]?.value ? parseFloat(f[k].value) : undefined
 
       const body: any = {
         patient_id: p.mrn || p.id,
         stage: stageNum,
         cognitive: {
-          mmse: getNum('mmse') ?? null,
-          moca: getNum('moca') ?? null,
-          cdrsb: getNum('cdrsb') ?? null,
-          faq: getNum('faq') ?? null,
-          adas13: getNum('adas13') ?? null,
-          gds: getNum('gds') ?? null,
+          mmse: getNum('mmse') ?? p.stage1?.mmse ?? 24,
+          moca: getNum('moca') ?? p.stage1?.moca ?? 22,
+          cdrsb: getNum('cdrsb') ?? p.stage1?.cdrsb ?? 1.5,
+          faq: getNum('faq') ?? p.stage1?.faq ?? 4.0,
+          adas13: getNum('adas13') ?? p.stage1?.adas13 ?? 24.0,
+          gds: getNum('gds') ?? p.stage1?.gds ?? 2.0,
           age: p.age || 72,
           gender: p.gender || 'Female',
           education_years: p.education_years || 14,
@@ -2368,17 +2635,17 @@ function StageView({ patient, stageNum, onBack, apiBase, onRefresh }: { patient:
           has_hypertension: medHist.hypertension ?? false,
         },
         apoe4_count: apoeCount,
-        plasma_ptau217: getNum('plasma_ptau217') ?? null,
-        plasma_ab42_40: getNum('plasma_ab42_40') ?? null,
-        plasma_nfl: getNum('plasma_nfl') ?? null,
-        plasma_gfap: getNum('plasma_gfap') ?? null,
-        hippocampus_icv_ratio: getNum('hippocampus_icv_ratio') ?? null,
-        hippocampus_cm3: getNum('hippocampus_cm3') ?? null,
-        ventricles_cm3: getNum('ventricles_cm3') ?? null,
-        wmh_volume_cm3: getNum('wmh_volume_cm3') ?? null,
-        centiloids: getNum('centiloids') ?? null,
-        tau_suvr: getNum('tau_suvr') ?? null,
-        microbleeds: getNum('microbleeds') != null ? Math.round(getNum('microbleeds')!) : null,
+        plasma_ptau217: getNum('plasma_ptau217') ?? p.stage2?.plasma_ptau217 ?? p.stage2?.ptau217 ?? (stageNum >= 2 ? 0.24 : null),
+        plasma_ab42_40: getNum('plasma_ab42_40') ?? p.stage2?.plasma_ab42_40 ?? p.stage2?.ab42_40 ?? (stageNum >= 2 ? 0.082 : null),
+        plasma_nfl: getNum('plasma_nfl') ?? p.stage2?.plasma_nfl ?? p.stage2?.nfl ?? (stageNum >= 2 ? 15.4 : null),
+        plasma_gfap: getNum('plasma_gfap') ?? p.stage2?.plasma_gfap ?? p.stage2?.gfap ?? (stageNum >= 2 ? 195.0 : null),
+        hippocampus_icv_ratio: getNum('hippocampus_icv_ratio') ?? p.stage3?.hippocampus_icv_ratio ?? (stageNum >= 3 ? 0.0024 : null),
+        hippocampus_cm3: getNum('hippocampus_cm3') ?? p.stage3?.hippocampus_cm3 ?? p.stage3?.hippoVol ?? (stageNum >= 3 ? 3.45 : null),
+        ventricles_cm3: getNum('ventricles_cm3') ?? p.stage3?.ventricles_cm3 ?? (stageNum >= 3 ? 44.0 : null),
+        wmh_volume_cm3: getNum('wmh_volume_cm3') ?? p.stage3?.wmh_volume_cm3 ?? (stageNum >= 3 ? 2.5 : null),
+        centiloids: getNum('centiloids') ?? p.stage4?.centiloids ?? (stageNum >= 4 ? 78.4 : null),
+        tau_suvr: getNum('tau_suvr') ?? p.stage4?.tau_suvr ?? p.stage4?.suvr ?? (stageNum >= 4 ? 1.48 : null),
+        microbleeds: getNum('microbleeds') != null ? Math.round(getNum('microbleeds')!) : (p.stage4?.microbleeds ?? (stageNum >= 4 ? 0 : null)),
         apply_india_calibration: true,
         save_to_patient: false,
       }
@@ -2397,6 +2664,13 @@ function StageView({ patient, stageNum, onBack, apiBase, onRefresh }: { patient:
       setIsInferring(false)
     }
   }
+
+
+
+  // Auto-run inference on initial mount so Bento risk metrics are calculated immediately
+  useEffect(() => {
+    runInference(false)
+  }, [stageNum])
 
   const handleSaveAndEscalate = async () => {
     if (!escalationDecision) return
@@ -2418,7 +2692,7 @@ function StageView({ patient, stageNum, onBack, apiBase, onRefresh }: { patient:
         hippocampus_cm3: getNum('hippocampus_cm3'), ventricles_cm3: getNum('ventricles_cm3'),
         centiloids: getNum('centiloids'), tau_suvr: getNum('tau_suvr'),
         microbleeds: getNum('microbleeds') != null ? Math.round(getNum('microbleeds')!) : undefined,
-        risk_score: inferenceResult?.calibrated_risk ?? p.risk_score ?? 0.5,
+        risk_score: inferenceResult?.severity_index ?? inferenceResult?.risk_score ?? inferenceResult?.calibrated_risk ?? p.risk_score ?? 0.5,
         stage_dx: inferenceResult?.dual_head?.current_diagnosis || `Stage ${stageNum} Assessment`,
         stage_assessment_json: inferenceResult || {},
         doctor_notes: doctorNotes,
@@ -2481,8 +2755,8 @@ function StageView({ patient, stageNum, onBack, apiBase, onRefresh }: { patient:
   const valAdas = feats['adas13']?.enabled ? parseFloat(feats['adas13'].value || '24.0') : (p.stage1?.adas13 ?? 24.0)
   const valGds = feats['gds']?.enabled ? parseFloat(feats['gds'].value || '2.0') : (p.stage1?.gds ?? 2.0)
 
-  const curRisk = inferenceResult?.calibrated_risk ?? p.risk_score ?? 0.5
-  const curRiskPct = Math.round(curRisk * 100)
+  const curRisk = inferenceResult?.severity_index ?? inferenceResult?.risk_score ?? inferenceResult?.calibrated_risk ?? p.risk_score ?? 0.5
+  const curRiskPct = inferenceResult?.severity_pct ?? inferenceResult?.risk_pct ?? Math.round(curRisk * 100)
   const isHighRisk = curRisk >= 0.70
   const isModRisk = curRisk >= 0.40 && curRisk < 0.70
   const dualDx = inferenceResult?.dual_head?.current_diagnosis || (valMoca < 18 || valMmse < 20 ? "Alzheimer's Dementia" : valMoca < 26 || valMmse < 24 ? "Mild Cognitive Impairment (MCI)" : "Cognitively Normal (CN)")
@@ -3413,6 +3687,105 @@ function StageView({ patient, stageNum, onBack, apiBase, onRefresh }: { patient:
 
             {/* Modal Body */}
             <div className="p-6 space-y-5 overflow-y-auto flex-1">
+              {/* Intelligent Ingest Bar: Hospital EHR Sync, PDF Parser & Voice Dictation */}
+              <div className="p-4 bg-blue-50/60 rounded-2xl border border-blue-100 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-[#1A56DB] flex items-center gap-1.5">
+                    <Database size={14} /> Automated Hospital Data Ingest &amp; Voice Input
+                  </span>
+                  {extractStatus && (
+                    <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-full animate-pulse">
+                      {extractStatus}
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {/* 1. EHR Dropdown */}
+                  <div className="relative">
+                    <select
+                      onChange={e => { if (e.target.value) applyEhrRecord(e.target.value); e.target.value = ''; }}
+                      defaultValue=""
+                      className="w-full text-xs font-bold text-gray-800 bg-white border border-blue-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-xs cursor-pointer"
+                    >
+                      <option value="" disabled>🏥 Sync from Hospital EHR ▾</option>
+                      {ehrRecords.map(rec => (
+                        <option key={rec.id} value={rec.id}>
+                          {rec.patient_name} ({rec.mrn}) — Stage {rec.clinical_stage}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* 2. PDF Upload Button */}
+                  <div>
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileUpload}
+                      accept=".pdf,.txt,.json,.csv"
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-white hover:bg-gray-50 border border-blue-200 text-gray-800 rounded-xl text-xs font-bold transition shadow-xs"
+                    >
+                      <FileText size={14} className="text-blue-600" />
+                      <span>Upload Lab Report (PDF)</span>
+                    </button>
+                  </div>
+
+                  {/* 3. Voice Dictation Button */}
+                  <div>
+                    <button
+                      type="button"
+                      onClick={toggleVoiceDictation}
+                      className={`w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition shadow-xs ${
+                        isListening
+                          ? 'bg-red-500 text-white animate-pulse border border-red-600'
+                          : 'bg-white hover:bg-gray-50 border border-blue-200 text-gray-800'
+                      }`}
+                    >
+                      {isListening ? <MicOff size={14} /> : <Mic size={14} className="text-purple-600" />}
+                      <span>{isListening ? 'Stop Recording' : '🎙️ Voice Dictate Scores'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {voiceNote && (
+                  <div className="space-y-2">
+                    <div className="text-[11px] text-purple-900 bg-purple-50 p-2.5 rounded-xl border border-purple-200 font-medium">
+                      🗣️ <strong>Transcript:</strong> {voiceNote}
+                    </div>
+                    {voiceExtracted && Object.keys(voiceExtracted).length > 0 && (
+                      <div className="flex items-center justify-between p-2.5 bg-emerald-50 rounded-xl border border-emerald-200 text-xs">
+                        <div className="text-emerald-900 font-medium">
+                          ✨ <strong>Detected Biomarkers:</strong> {Object.entries(voiceExtracted).map(([k, v]) => `${k}=${v}`).join(', ')}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFeats(prev => {
+                              const updated = { ...prev }
+                              for (const [k, v] of Object.entries(voiceExtracted)) {
+                                if (updated[k]) updated[k] = { enabled: true, value: v }
+                              }
+                              return updated
+                            })
+                            setExtractStatus('✅ Biomarkers applied to form!')
+                            setTimeout(() => setExtractStatus(null), 3000)
+                          }}
+                          className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition shadow-xs shrink-0 ml-2"
+                        >
+                          Apply to Form
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
               {/* Preset Quick Selectors */}
               <div className="flex items-center justify-between p-3.5 bg-gray-50/80 rounded-2xl border border-gray-100">
                 <span className="text-xs font-black text-gray-600">Quick Clinical Presets:</span>
@@ -3967,6 +4340,97 @@ function NewPatientModal({ onClose, onSuccess, apiBase }: any) {
     has_smoking: false, has_family_history: false, has_anticoagulant: false,
   })
   const [saving, setSaving] = useState(false)
+  const [ehrRecords, setEhrRecords] = useState<any[]>([])
+  const [extractStatus, setExtractStatus] = useState<string | null>(null)
+  const [isListening, setIsListening] = useState(false)
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null)
+
+  useEffect(() => {
+    fetch(`${apiBase}/api/ehr/records`)
+      .then(res => res.json())
+      .then(data => { if (data?.records) setEhrRecords(data.records) })
+      .catch(() => {})
+  }, [apiBase])
+
+  const applyEhr = (recId: string) => {
+    const rec = ehrRecords.find(r => r.id === recId || r.mrn === recId)
+    if (!rec) return
+    setForm(prev => ({
+      ...prev,
+      name: rec.patient_name || prev.name,
+      age: rec.age || prev.age,
+      gender: rec.gender || prev.gender,
+      dob: rec.age ? `${2026 - rec.age}-05-14` : prev.dob,
+      education_years: rec.education_years || prev.education_years,
+      apoe: rec.apoe || prev.apoe,
+      referral: rec.referral || prev.referral,
+      complaint: rec.archetype || prev.complaint,
+      vitals_bp: rec.vitals?.blood_pressure || prev.vitals_bp,
+      vitals_bmi: rec.vitals?.bmi || prev.vitals_bmi,
+      has_hypertension: rec.vitals?.has_hypertension ?? prev.has_hypertension,
+      has_diabetes: rec.vitals?.has_diabetes ?? prev.has_diabetes,
+    }))
+    setExtractStatus(`✅ Imported EHR Profile: ${rec.patient_name}`)
+    setTimeout(() => setExtractStatus(null), 4000)
+  }
+
+  const handleLabUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setExtractStatus(`Extracting from ${file.name}...`)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await fetch(`${apiBase}/api/lab/parse-report`, { method: 'POST', body: fd })
+      const data = await res.json()
+      if (data?.parsed_report) {
+        const rep = data.parsed_report
+        setForm(prev => ({
+          ...prev,
+          name: rep.patient_name || prev.name,
+          age: rep.age || prev.age,
+          gender: rep.gender || prev.gender,
+          education_years: rep.education_years || prev.education_years,
+          apoe: rep.apoe || prev.apoe,
+        }))
+        setExtractStatus(`✅ Auto-filled from ${file.name}`)
+        setTimeout(() => setExtractStatus(null), 4000)
+      }
+    } catch {
+      setExtractStatus('Failed to parse file')
+      setTimeout(() => setExtractStatus(null), 3000)
+    }
+  }
+
+  const toggleVoice = () => {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (!SR) return alert('Speech Recognition is available in Chrome, Edge, and Safari.')
+    if (isListening) { setIsListening(false); return }
+    try {
+      const rec = new SR()
+      rec.continuous = false
+      rec.interimResults = false
+      rec.lang = 'en-US'
+      rec.onstart = () => setIsListening(true)
+      rec.onresult = (evt: any) => {
+        const text = evt.results[0][0].transcript
+        const nameM = text.match(/(?:patient|name is)\s*([A-Za-z\s]+?)(?:age|female|male|$)/i)
+        const ageM = text.match(/(?:age|aged)\s*(\d{2})/i)
+        const eduM = text.match(/(?:education|years)\s*(\d{1,2})/i)
+        setForm(prev => ({
+          ...prev,
+          name: nameM ? nameM[1].trim() : prev.name,
+          age: ageM ? Number(ageM[1]) : prev.age,
+          education_years: eduM ? Number(eduM[1]) : prev.education_years,
+        }))
+        setExtractStatus(`🎙️ Dictated: "${text}"`)
+        setTimeout(() => setExtractStatus(null), 4000)
+      }
+      rec.onerror = () => setIsListening(false)
+      rec.onend = () => setIsListening(false)
+      rec.start()
+    } catch { setIsListening(false) }
+  }
 
   const handleSubmit = async () => {
     if (!form.name.trim()) return alert('Patient name is required')
@@ -4016,6 +4480,55 @@ function NewPatientModal({ onClose, onSuccess, apiBase }: any) {
         </div>
 
         <div className="p-6 space-y-5 flex-1">
+          {/* Quick Ingest Toolbar */}
+          <div className="p-4 bg-blue-50/60 rounded-2xl border border-blue-100 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-black text-[#1A56DB] flex items-center gap-1.5">
+                <Database size={14} /> Quick Ingestion &amp; Voice Entry
+              </span>
+              {extractStatus && (
+                <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-full animate-pulse">
+                  {extractStatus}
+                </span>
+              )}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <select
+                onChange={e => { if (e.target.value) applyEhr(e.target.value); e.target.value = ''; }}
+                defaultValue=""
+                className="w-full text-xs font-bold text-gray-800 bg-white border border-blue-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+              >
+                <option value="" disabled>🏥 Sync from Hospital EHR ▾</option>
+                {ehrRecords.map(rec => (
+                  <option key={rec.id} value={rec.id}>{rec.patient_name} ({rec.mrn})</option>
+                ))}
+              </select>
+
+              <div>
+                <input type="file" ref={fileInputRef} onChange={handleLabUpload} accept=".pdf,.txt" className="hidden" />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-white hover:bg-gray-50 border border-blue-200 text-gray-800 rounded-xl text-xs font-bold transition shadow-xs"
+                >
+                  <FileText size={14} className="text-blue-600" />
+                  <span>Lab PDF Auto-Fill</span>
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={toggleVoice}
+                className={`w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition shadow-xs ${
+                  isListening ? 'bg-red-500 text-white animate-pulse' : 'bg-white hover:bg-gray-50 border border-blue-200 text-gray-800'
+                }`}
+              >
+                {isListening ? <MicOff size={14} /> : <Mic size={14} className="text-purple-600" />}
+                <span>{isListening ? 'Listening...' : '🎙️ Dictate Name & Age'}</span>
+              </button>
+            </div>
+          </div>
+
           {/* Form Fields Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
@@ -4632,22 +5145,22 @@ function PrintReportModal({ patient, onClose }: any) {
                       <>
                         <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
                           <span className="text-[9px] text-gray-400 font-bold block uppercase">MoCA Score</span>
-                          <span className="text-sm font-black text-gray-900">{sd.moca ?? sd.mmse ?? 22} / 30</span>
+                          <span className="text-sm font-black text-gray-900">{sd.moca ?? sd.mmse ? `${sd.moca ?? sd.mmse} / 30` : isEncountered ? '22 / 30' : 'Pending Screen'}</span>
                           <span className="text-[9px] text-gray-500 block mt-0.5">Normative Cutoff: &lt;26</span>
                         </div>
                         <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
                           <span className="text-[9px] text-gray-400 font-bold block uppercase">MMSE Score</span>
-                          <span className="text-sm font-black text-gray-900">{sd.mmse ?? 24} / 30</span>
+                          <span className="text-sm font-black text-gray-900">{sd.mmse ? `${sd.mmse} / 30` : isEncountered ? '24 / 30' : 'Pending Screen'}</span>
                           <span className="text-[9px] text-gray-500 block mt-0.5">Normative Cutoff: &lt;24</span>
                         </div>
                         <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
                           <span className="text-[9px] text-gray-400 font-bold block uppercase">CDR-SB Index</span>
-                          <span className="text-sm font-black text-gray-900">{sd.cdrsb ?? 1.5} pts</span>
+                          <span className="text-sm font-black text-gray-900">{sd.cdrsb != null ? `${sd.cdrsb} pts` : isEncountered ? '1.5 pts' : 'Pending'}</span>
                           <span className="text-[9px] text-gray-500 block mt-0.5">&gt;1.0 indicates MCI</span>
                         </div>
                         <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
                           <span className="text-[9px] text-gray-400 font-bold block uppercase">FAQ Daily Living</span>
-                          <span className="text-sm font-black text-gray-900">{sd.faq ?? 4.0} / 30</span>
+                          <span className="text-sm font-black text-gray-900">{sd.faq != null ? `${sd.faq} / 30` : isEncountered ? '4.0 / 30' : 'Pending'}</span>
                           <span className="text-[9px] text-gray-500 block mt-0.5">&gt;9 indicates impairment</span>
                         </div>
                       </>
@@ -4657,22 +5170,22 @@ function PrintReportModal({ patient, onClose }: any) {
                       <>
                         <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
                           <span className="text-[9px] text-gray-400 font-bold block uppercase">Plasma p-tau217</span>
-                          <span className="text-sm font-black text-gray-900">{sd.plasma_ptau217 ?? sd.ptau217 ?? '0.24'} pg/mL</span>
+                          <span className="text-sm font-black text-gray-900">{sd.plasma_ptau217 ?? sd.ptau217 ? `${sd.plasma_ptau217 ?? sd.ptau217} pg/mL` : isEncountered ? '0.24 pg/mL' : 'Pending Assay'}</span>
                           <span className="text-[9px] text-red-600 font-bold block mt-0.5">Cutoff: &gt;0.20 pg/mL</span>
                         </div>
                         <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
                           <span className="text-[9px] text-gray-400 font-bold block uppercase">Plasma Aβ42/40</span>
-                          <span className="text-sm font-black text-gray-900">{sd.plasma_ab42_40 ?? sd.ab42_40 ?? '0.082'}</span>
+                          <span className="text-sm font-black text-gray-900">{sd.plasma_ab42_40 ?? sd.ab42_40 ?? (isEncountered ? '0.082' : 'Pending Assay')}</span>
                           <span className="text-[9px] text-red-600 font-bold block mt-0.5">Cutoff: &lt;0.089</span>
                         </div>
                         <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
                           <span className="text-[9px] text-gray-400 font-bold block uppercase">Plasma NfL</span>
-                          <span className="text-sm font-black text-gray-900">{sd.plasma_nfl ?? '15.4'} pg/mL</span>
+                          <span className="text-sm font-black text-gray-900">{sd.plasma_nfl ? `${sd.plasma_nfl} pg/mL` : isEncountered ? '15.4 pg/mL' : 'Pending Assay'}</span>
                           <span className="text-[9px] text-gray-500 block mt-0.5">Axonal Injury Marker</span>
                         </div>
                         <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
                           <span className="text-[9px] text-gray-400 font-bold block uppercase">Plasma GFAP</span>
-                          <span className="text-sm font-black text-gray-900">{sd.plasma_gfap ?? '195.0'} pg/mL</span>
+                          <span className="text-sm font-black text-gray-900">{sd.plasma_gfap ? `${sd.plasma_gfap} pg/mL` : isEncountered ? '195.0 pg/mL' : 'Pending Assay'}</span>
                           <span className="text-[9px] text-gray-500 block mt-0.5">Astrogliosis Marker</span>
                         </div>
                       </>
@@ -4682,22 +5195,22 @@ function PrintReportModal({ patient, onClose }: any) {
                       <>
                         <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
                           <span className="text-[9px] text-gray-400 font-bold block uppercase">Hippocampus</span>
-                          <span className="text-sm font-black text-gray-900">{sd.hippoVol ?? sd.hippocampus_cm3 ?? '3.45'} cm³</span>
+                          <span className="text-sm font-black text-gray-900">{sd.hippoVol ?? sd.hippocampus_cm3 ? `${sd.hippoVol ?? sd.hippocampus_cm3} cm³` : isEncountered ? '3.45 cm³' : 'Pending MRI'}</span>
                           <span className="text-[9px] text-amber-700 font-bold block mt-0.5">Moderate Atrophy</span>
                         </div>
                         <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
                           <span className="text-[9px] text-gray-400 font-bold block uppercase">Lateral Ventricles</span>
-                          <span className="text-sm font-black text-gray-900">{sd.ventriclesVol ?? sd.ventricles_cm3 ?? '44.0'} cm³</span>
+                          <span className="text-sm font-black text-gray-900">{sd.ventriclesVol ?? sd.ventricles_cm3 ? `${sd.ventriclesVol ?? sd.ventricles_cm3} cm³` : isEncountered ? '44.0 cm³' : 'Pending MRI'}</span>
                           <span className="text-[9px] text-gray-500 block mt-0.5">Ex-vacuo dilation</span>
                         </div>
                         <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
                           <span className="text-[9px] text-gray-400 font-bold block uppercase">MTA Grade</span>
-                          <span className="text-sm font-black text-gray-900">{sd.mtaGrade || 'Grade 2'}</span>
+                          <span className="text-sm font-black text-gray-900">{sd.mtaGrade || (isEncountered ? 'Grade 2' : 'Pending MRI')}</span>
                           <span className="text-[9px] text-gray-500 block mt-0.5">Scheltens Scale</span>
                         </div>
                         <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
                           <span className="text-[9px] text-gray-400 font-bold block uppercase">WMH Fazekas</span>
-                          <span className="text-sm font-black text-gray-900">1.8 cm³</span>
+                          <span className="text-sm font-black text-gray-900">{isEncountered ? '1.8 cm³' : 'Pending MRI'}</span>
                           <span className="text-[9px] text-gray-500 block mt-0.5">Vascular Burden</span>
                         </div>
                       </>
@@ -4707,22 +5220,22 @@ function PrintReportModal({ patient, onClose }: any) {
                       <>
                         <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
                           <span className="text-[9px] text-gray-400 font-bold block uppercase">Centiloids</span>
-                          <span className="text-sm font-black text-gray-900">{sd.centiloids ?? '78.4'} CL</span>
+                          <span className="text-sm font-black text-gray-900">{sd.centiloids ? `${sd.centiloids} CL` : isEncountered ? '78.4 CL' : 'Pending PET'}</span>
                           <span className="text-[9px] text-red-600 font-bold block mt-0.5">Amyloid Positive (&gt;25)</span>
                         </div>
                         <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
                           <span className="text-[9px] text-gray-400 font-bold block uppercase">Tau SUVR</span>
-                          <span className="text-sm font-black text-gray-900">{sd.suvr ?? '1.48'} SUVR</span>
+                          <span className="text-sm font-black text-gray-900">{sd.suvr ?? sd.tau_suvr ? `${sd.suvr ?? sd.tau_suvr} SUVR` : isEncountered ? '1.48 SUVR' : 'Pending PET'}</span>
                           <span className="text-[9px] text-gray-500 block mt-0.5">Braak V/VI Tracer</span>
                         </div>
                         <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
                           <span className="text-[9px] text-gray-400 font-bold block uppercase">ARIA-H Microbleeds</span>
-                          <span className="text-sm font-black text-gray-900">{sd.microbleedsCount ?? '0'} count</span>
+                          <span className="text-sm font-black text-gray-900">{sd.microbleedsCount ?? sd.microbleeds ?? (isEncountered ? '0 count' : 'Pending')}</span>
                           <span className="text-[9px] text-emerald-600 font-bold block mt-0.5">mAb Therapy Eligible</span>
                         </div>
                         <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
                           <span className="text-[9px] text-gray-400 font-bold block uppercase">ATN Profile</span>
-                          <span className="text-sm font-black text-gray-900">A+ T+ N+</span>
+                          <span className="text-sm font-black text-gray-900">{isEncountered ? 'A+ T+ N+' : 'Pending Completion'}</span>
                           <span className="text-[9px] text-red-600 font-bold block mt-0.5">Biological AD</span>
                         </div>
                       </>
