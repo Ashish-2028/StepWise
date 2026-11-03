@@ -2,8 +2,8 @@
 
 > **Document Version:** 3.0.0  
 > **Last Updated:** September 28, 2026  
-> **Target Platform:** GE Healthcare Precision Care Challenge 2026 (Grand Finale, Bangalore - Oct 1, 2026)  
-> **Team:** Team Litchi (*Yatharth Gupta, Avyukt Sisodia, Ashish Kumar, Akhshat Sharma*)  
+> **Target Platform:** StepWise Precision Care Architecture  
+> **Team:** Ashish Kumar (Lead ML Architect)  
 > **Maintainer Protocol:** This is a permanent living document. When modifying schemas or data sources, **append revision notes and preserve data dictionaries**.
 
 ---

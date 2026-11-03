@@ -2,8 +2,8 @@
 
 > **Document Version:** 1.0.0  
 > **Current Status:** Phase 1 Complete · Ready for Phase 2 Implementation  
-> **Target Platform:** GE Healthcare Precision Care Challenge 2026 (Grand Finale, Bangalore)  
-> **Team:** Team Litchi (*Yatharth Gupta, Avyukt Sisodia, Ashish Kumar, Akhshat Sharma*)  
+> **Target Platform:** StepWise Precision Care Architecture  
+> **Team:** Ashish Kumar (Lead ML Architect)  
 > 
 > ### 🛡️ Maintainer & Developer Protocol
 > 1. **Zero Data Loss:** When updating progress, **do NOT delete previous tasks or rationale**. Simply toggle `[ ]` to `[x]` and append new details.
@@ -33,7 +33,7 @@
 ## Detailed Phased Task Checklist
 
 ### Phase 1: Knowledge Base, Clinical Rationale & Architecture Specifications
-- [x] **Task 1.1:** Deconstruct GE Healthcare problem statement and competitor landscape. *(Done: Sept 27, 2026)*
+- [x] **Task 1.1:** Deconstruct precision neurology problem statement and competitor landscape. *(Done: Sept 27, 2026)*
 - [x] **Task 1.2:** Write `01_PROBLEM_AND_CLINICAL_KNOWLEDGE.md` (Neurobiology, ATN framework, DMTs, 4-stage funnel, clinician loop). *(Done: Sept 27, 2026)*
 - [x] **Task 1.3:** Write `02_DATA_STRATEGY_AND_COHORTS.md` (ADNI, OASIS, LASI-DAD, GenomeIndia, multimodal schema). *(Done: Sept 27, 2026)*
 - [x] **Task 1.4:** Write `03_AI_ML_MODELING_AND_EXPLAINABILITY.md` (Staged XGBoost, TreeSHAP, mathematical gating, India recalibration). *(Done: Sept 27, 2026)*
@@ -186,14 +186,14 @@
 
 | Version | Date | Author | Description of Changes |
 | :--- | :--- | :--- | :--- |
-| **1.0.0** | Sept 27, 2026 | Team Litchi | Initialized all 5 master documents and established Phased Build Tracker. |
-| **1.1.0** | Sept 28, 2026 | Team Litchi | Completed 4 ML Staged XGBoost models, Isotonic Calibration, and TreeSHAP. |
-| **1.2.0** | Sept 29, 2026 | Team Litchi | Integrated Hybrid MRI/PET Vision strategy, Dual-Head triage, LASI-DAD, and Next.js 14. |
-| **1.3.0** | Sept 29, 2026 | Team Litchi | Completed interactive Next.js 14 UI, FHIR R4 order writeback modal, and dynamic NaN diagnostic sandbox. |
-| **1.4.0** | Sept 29, 2026 | Team Litchi | Completed Stage 3 MRI & Stage 4 Molecular PET Multi-Task Vision Heads on Kaggle Cloud Dual T4 GPUs. |
-| **1.5.0** | Sept 30, 2026 | Team Litchi | Completed full UI overhaul: Rich Bento grids for all 4 stages, editable clinical dossiers, dynamic stage-specific risk scores, and dual vision viewer placement. |
-| **1.6.0** | Sept 30, 2026 | Team Litchi | Connected live FastAPI Python backend with native NaN checkboxes, DICOM PyTorch Grad-CAM, Doctor-in-the-Loop escalation gate, and SQLite patient trajectory store. |
-| **1.7.0** | Oct 09, 2026 | Team Litchi | Initiated Phase 10 on branch `feat/calibrator-ehr-ingestion`: Platt scaling, dynamic severity scores, simulated hospital EHR sync, lab PDF parser, and voice dictation. |
+| **1.0.0** | Sept 27, 2026 | Ashish Kumar | Initialized all 5 master documents and established Phased Build Tracker. |
+| **1.1.0** | Sept 28, 2026 | Ashish Kumar | Completed 4 ML Staged XGBoost models, Isotonic Calibration, and TreeSHAP. |
+| **1.2.0** | Sept 29, 2026 | Ashish Kumar | Integrated Hybrid MRI/PET Vision strategy, Dual-Head triage, LASI-DAD, and Next.js 14. |
+| **1.3.0** | Sept 29, 2026 | Ashish Kumar | Completed interactive Next.js 14 UI, FHIR R4 order writeback modal, and dynamic NaN diagnostic sandbox. |
+| **1.4.0** | Sept 29, 2026 | Ashish Kumar | Completed Stage 3 MRI & Stage 4 Molecular PET Multi-Task Vision Heads on Kaggle Cloud Dual T4 GPUs. |
+| **1.5.0** | Sept 30, 2026 | Ashish Kumar | Completed full UI overhaul: Rich Bento grids for all 4 stages, editable clinical dossiers, dynamic stage-specific risk scores, and dual vision viewer placement. |
+| **1.6.0** | Sept 30, 2026 | Ashish Kumar | Connected live FastAPI Python backend with native NaN checkboxes, DICOM PyTorch Grad-CAM, Doctor-in-the-Loop escalation gate, and SQLite patient trajectory store. |
+| **1.7.0** | Oct 09, 2026 | Ashish Kumar | Initiated Phase 10 on branch `feat/calibrator-ehr-ingestion`: Platt scaling, dynamic severity scores, simulated hospital EHR sync, lab PDF parser, and voice dictation. |
 
 ---
 *End of Document 05. System architecture and build tracker locked for Grand Finale execution.*

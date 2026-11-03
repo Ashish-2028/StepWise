@@ -2,8 +2,8 @@
 
 > **Document Version:** 1.0.0  
 > **Last Updated:** September 2026  
-> **Target Platform:** GE Healthcare Precision Care Challenge 2026 (Grand Finale, Bangalore)  
-> **Team:** Team Litchi (*Yatharth Gupta, Avyukt Sisodia, Ashish Kumar, Akhshat Sharma*)  
+> **Target Platform:** StepWise Precision Care Architecture  
+> **Team:** Ashish Kumar (Lead ML Architect)  
 > **Maintainer Protocol:** This is a permanent living document. When modifying API endpoints, UI components, or data models, **update endpoint contracts and wireframes**.
 
 ---
@@ -135,7 +135,7 @@ StepWise is architected as an **enterprise-ready, SMART on FHIR compliant Clinic
   * **APOE Genotype Indicator:** Displays allele pairing ($\varepsilon3/\varepsilon4$ vs $\varepsilon4/\varepsilon4$).
 
 #### Module E: Hospital Capacity & Health-Economic ROI Simulator
-* **Role:** Executive-level operational analytics tool for hospital administrators and GE Healthcare adjudicators.
+* **Role:** Executive-level operational analytics tool for hospital administrators and clinical adjudicators.
 * **Interactive Sliders:**
   * Annual Screened Patient Cohort Size ($500 - 10,000$).
   * MRI Scanner Capacity & Amyloid-PET Availability.
@@ -213,7 +213,7 @@ When the clinician clicks **"Approve & Order Next Test"**:
 ## 5. Dynamic Hospital Simulation Engine
 
 ### Realistic Cohort Data Generator
-To provide an unforgettable live demo in Bangalore, StepWise includes a **High-Fidelity Synthetic Patient Generator** seeded with authentic ADNI/LASI-DAD distributions:
+For rigorous end-to-end clinical validation, StepWise includes a **High-Fidelity Synthetic Patient Generator** seeded with authentic ADNI/LASI-DAD distributions:
 * **Cohort of 50 Realistic Patients** spanning all 4 clinical stages.
 * **Pre-configured Spotlight Patients for Demo Walkthrough:**
   1. *Patient A (Rapid Prototypical Case):* Age 72, rapid MoCA decline, p-tau217 elevated, hippocampal atrophy, candidate for Vizamyl PET.

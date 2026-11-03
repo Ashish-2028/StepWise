@@ -2,8 +2,8 @@
 
 > **Document Version:** 1.0.0  
 > **Last Updated:** September 2026  
-> **Target Platform:** GE Healthcare Precision Care Challenge 2026 (Grand Finale, Bangalore)  
-> **Team:** Team Litchi (*Yatharth Gupta, Avyukt Sisodia, Ashish Kumar, Akhshat Sharma*)  
+> **Target Platform:** StepWise Precision Care Architecture  
+> **Team:** Ashish Kumar (Lead ML Architect)  
 > **Maintainer Protocol:** This is a permanent living document. When updating, **do not purge historical rationale**. Append and refine sections with clear change notes to preserve decision lineages.
 
 ---
@@ -63,7 +63,7 @@ Alzheimer’s Disease (AD) is a progressive, neurodegenerative disorder affectin
 
 ## 2. Clinical Grounding: Neurobiology & Pathophysiology of Alzheimer's Disease
 
-To build clinical trust with neurologists and GE Healthcare adjudicators, the AI decision engine must reflect genuine biological disease staging rather than naive statistical correlations.
+To build clinical trust with neurologists and clinical adjudicators, the AI decision engine must reflect genuine biological disease staging rather than naive statistical correlations.
 
 ```mermaid
 flowchart TD
@@ -140,7 +140,7 @@ Under current clinical pathways:
 
 ## 4. GE Healthcare Strategic Alignment & Technological Context
 
-GE Healthcare is not simply an AI consumer; it is the **world's premier medical imaging, molecular medicine, and clinical infrastructure pioneer**:
+The platform integrates with modern medical imaging; it is the **world's premier medical imaging, molecular medicine, and clinical infrastructure pioneer**:
 
 1. **GE Healthcare Imaging Modalities:**
    * **SIGNA™ MRI Scanners (1.5T / 3.0T):** Volumetric structural brain sequences (T1w MPRAGE, T2 FLAIR, SWI/SWAN for microbleed detection).
@@ -262,7 +262,7 @@ When a patient scores below the escalation gate ($R < T$), StepWise does **not**
 
 ## 7. Competitive Edge & Hackathon Winning Strategy
 
-### Why StepWise Beats Other Solutions in Bangalore:
+### Core Advantages of StepWise Triage:
 1. **Clinically Authentic Multi-Modal Funnel:** We don't just dump columns into a single ML model. We respect the real-world sequence of clinical discovery.
 2. **Explainable AI with TreeSHAP:** Every prioritization score provides exact, patient-specific biological drivers with directional attribution.
 3. **Integrated ARIA Safety Profiling:** We address the biggest hurdle in modern neuro-therapeutics (safety and microbleed management).

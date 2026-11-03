@@ -45,3 +45,31 @@ yarn-error.log*
 *.pid
 *.pid.lock
 scratch/
+
+# Large Datasets & Media
+Dataset/
+data/raw/
+*.nii
+*.nii.gz
+*.dcm
+*.zip
+*.tar.gz
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Model weights & trained artifacts (PROTECTED)
+*.pth
+*.pt
+*.joblib
+*.pkl
+backend/models/**/*.joblib
+backend/models/**/*.pt
+backend/models/**/*.pth
+backend/models/**/*.zip
+
+# Internal / Temporary scripts
+scripts/*hackathon*
+scripts/*test_repo*
